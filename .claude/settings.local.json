@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --use-npm --import-alias \"@/*\" --turbopack 2>&1)",
+      "Bash(rm -rf /tmp/ema-tne && cd /tmp && echo \"no\" | npx create-next-app@latest ema-tne --typescript --tailwind --eslint --app --src-dir --use-npm --import-alias \"@/*\" --turbopack 2>&1)",
+      "Bash(cp -a /tmp/ema-tne/. /Users/piyushmayank/Projects/Ema-TnE/ && rm -rf /tmp/ema-tne)",
+      "Bash(npm install @supabase/supabase-js @supabase/ssr @trpc/server @trpc/client @trpc/next @trpc/react-query @tanstack/react-query zustand zod react-hook-form @hookform/resolvers superjson 2>&1)",
+      "Bash(npm install -D prettier prettier-plugin-tailwindcss 2>&1)",
+      "Bash(npx shadcn@latest init -d 2>&1)",
+      "Bash(npx tsc --noEmit 2>&1)",
+      "Bash(git add -A && git status 2>&1)"
+    ]
+  }
+}
