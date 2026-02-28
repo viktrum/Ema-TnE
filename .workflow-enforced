@@ -1,0 +1,3 @@
+# Workflow enforcement enabled
+# Git hooks will prevent direct commits to main and develop branches.
+# All work must go through feature branches: feature/, hotfix/, bugfix/, chore/
