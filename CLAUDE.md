@@ -1,9 +1,19 @@
 # Ema TnE - Project Rules
 
-> Updated at: 2026-02-28 19:22 IST
+> Updated at: 2026-02-28 19:45 IST
 
 ## Project Overview
-Time and Expense Management application.
+Two parallel tracks:
+
+### Track 1: TnE Tool (primary)
+Time and Expense Management application — the main codebase we're building.
+
+### Track 2: AI Code Review Evaluation (secondary)
+Evaluating CodeRabbit and Greptile as AI code review tools. Using this repo's PRs as the test surface. Analysis covers:
+- Onboarding: friction, clarity, time-to-value
+- Core features: value, usability gaps, differentiation
+- ICP, core problem solved, churn risks
+- Side-by-side comparison on the same PRs
 
 ## Tech Stack
 - **Framework:** Next.js 16 (App Router, Turbopack)
@@ -44,3 +54,10 @@ src/
 - Workflow enforcement is enabled (`.workflow-enforced`)
 - All work on feature branches, never commit directly to `main` or `develop`
 - Conventional commits required
+
+## Agent Rules
+> Updated at: 2026-03-01 17:20 IST
+- **NEVER use GSD agents** (gsd-executor, gsd-planner, gsd-verifier, gsd-debugger, gsd-codebase-mapper, gsd-roadmapper, etc.) — they inject GSD-specific protocols and context that add unnecessary overhead
+- Use `general-purpose` for code writing, multi-step tasks, and research (it has all tools)
+- Use `Explore` for quick codebase exploration (read-only)
+- Use `haiku` model for simple/fast agent tasks to minimize cost
