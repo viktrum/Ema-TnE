@@ -166,14 +166,13 @@ export default function ChatPage() {
           // Only process notification messages from the approval router.
           // Regular chat messages (saved by /api/chat SSE route) are already
           // displayed via streaming — we must NOT re-add them here.
-          // Notification messages from approval.ts contain HTML tags (<p><strong>).
-          const content = msg.content as string;
-          if (!content?.includes('<p><strong>')) return;
+          // Notifications have message_type='notification' (set by approval router).
+          if (msg.message_type !== 'notification') return;
 
           addMessage({
             id: msg.id,
             role: 'assistant',
-            content,
+            content: msg.content,
             timestamp: new Date(msg.created_at).getTime(),
           });
           toast('New update from Ema');

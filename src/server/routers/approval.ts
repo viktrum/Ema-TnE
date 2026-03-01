@@ -1,25 +1,47 @@
 import { z } from "zod/v4";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "@/server/trpc/init";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Look up employee info from dashboard_reports → reports for chat notification
+// Escape HTML to prevent XSS when embedding user input in notification HTML
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Look up reviewer name from users table
+async function getReviewerName(supabase: SupabaseClient, userId: string): Promise<string> {
+  const { data } = await supabase
+    .from("users")
+    .select("name")
+    .eq("id", userId)
+    .single();
+  return data?.name || 'Manager';
+}
+
+// Notify employee via chat_messages with message_type='notification'
 async function notifyEmployee(
-  supabase: any,
+  supabase: SupabaseClient,
   reportId: number,
-  reviewerName: string,
   content: string,
-) {
+): Promise<void> {
   // Get scenario_id from dashboard_reports
-  const { data: dashReport } = await supabase
+  const { data: dashReport, error: dashError } = await supabase
     .from("dashboard_reports")
     .select("scenario_id")
     .eq("id", reportId)
     .single();
 
-  if (!dashReport?.scenario_id) return;
+  if (dashError || !dashReport?.scenario_id) {
+    console.error("notifyEmployee: dashboard_reports lookup failed", dashError);
+    return;
+  }
 
   // Find the employee who submitted this report
-  const { data: report } = await supabase
+  const { data: report, error: reportError } = await supabase
     .from("reports")
     .select("user_id, scenario_id")
     .eq("scenario_id", dashReport.scenario_id)
@@ -28,15 +50,23 @@ async function notifyEmployee(
     .limit(1)
     .single();
 
-  if (!report?.user_id) return;
+  if (reportError || !report?.user_id) {
+    console.error("notifyEmployee: reports lookup failed", reportError);
+    return;
+  }
 
-  // Insert Ema notification as a chat message
-  await supabase.from("chat_messages").insert({
+  // Insert Ema notification as a chat message (message_type='notification' for dedup)
+  const { error: insertError } = await supabase.from("chat_messages").insert({
     user_id: report.user_id,
     scenario_id: report.scenario_id,
     role: "assistant",
     content,
+    message_type: "notification",
   });
+
+  if (insertError) {
+    console.error("notifyEmployee: chat_messages insert failed", insertError);
+  }
 }
 
 export const approvalRouter = router({
@@ -66,13 +96,14 @@ export const approvalRouter = router({
         .update({ status: "auto_approved" })
         .eq("id", input.reportId);
 
+      const reviewerName = await getReviewerName(ctx.supabase, ctx.user.id);
+
       // Notify employee via chat message + audit log (parallel)
       await Promise.all([
         notifyEmployee(
           ctx.supabase,
           input.reportId,
-          "Mihir",
-          "<p><strong>Update:</strong> Mihir has <span style=\"color:#16a34a\">approved</span> your expense report.</p>",
+          `<p><strong>Update:</strong> ${escapeHtml(reviewerName)} has <span style="color:#16a34a">approved</span> your expense report.</p>`,
         ),
         ctx.supabase.from("audit_log").insert({
           event_type: "approve",
@@ -110,13 +141,15 @@ export const approvalRouter = router({
         .update({ status: "rejected" })
         .eq("id", input.reportId);
 
-      const notesText = input.notes ? ` ${input.notes}` : '';
+      const reviewerName = await getReviewerName(ctx.supabase, ctx.user.id);
+      const safeReason = escapeHtml(input.reason);
+      const safeNotes = input.notes ? ` ${escapeHtml(input.notes)}` : '';
+
       await Promise.all([
         notifyEmployee(
           ctx.supabase,
           input.reportId,
-          "Mihir",
-          `<p><strong>Update:</strong> Mihir has <span style="color:#dc2626">rejected</span> your expense report. Reason: ${input.reason}.${notesText}</p>`,
+          `<p><strong>Update:</strong> ${escapeHtml(reviewerName)} has <span style="color:#dc2626">rejected</span> your expense report. Reason: ${safeReason}.${safeNotes}</p>`,
         ),
         ctx.supabase.from("audit_log").insert({
           event_type: "reject",
@@ -152,12 +185,13 @@ export const approvalRouter = router({
         .update({ status: "pending_info" })
         .eq("id", input.reportId);
 
+      const reviewerName = await getReviewerName(ctx.supabase, ctx.user.id);
+
       await Promise.all([
         notifyEmployee(
           ctx.supabase,
           input.reportId,
-          "Mihir",
-          `<p><strong>Question from Mihir:</strong> ${input.question}</p>`,
+          `<p><strong>Question from ${escapeHtml(reviewerName)}:</strong> ${escapeHtml(input.question)}</p>`,
         ),
         ctx.supabase.from("audit_log").insert({
           event_type: "ask_employee",
