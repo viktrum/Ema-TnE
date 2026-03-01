@@ -63,7 +63,76 @@ export const reportRouter = router({
           });
         }
 
-        assemblyOutput = AssemblyOutputSchema.parse(fallback.response);
+        // Transform fallback data to match AssemblyOutputSchema
+        // Fallback seed data has a different shape than the schema
+        const raw = fallback.response;
+        if (raw.report) {
+          // Already wrapped — try parsing directly
+          assemblyOutput = AssemblyOutputSchema.parse(raw);
+        } else {
+          // Transform flat fallback structure to schema format
+          const items = (raw.items || []).map((item: Record<string, unknown>, i: number) => ({
+            id: item.id || `EXP-${String(i + 1).padStart(3, "0")}`,
+            description: item.description || "",
+            vendor: item.vendor || item.description || "",
+            date: item.date || "",
+            amount: item.amount || 0,
+            currency: item.currency || "INR",
+            category: item.category || "Miscellaneous",
+            original_category: item.original_category || null,
+            confidence: item.confidence || 0,
+            sources: item.sources || [],
+            reasoning: item.reasoning || item.policy_check?.toString() || "",
+            policy_status: item.status === "compliant" ? "within_policy"
+              : item.original_category ? "within_policy_after_recategorization"
+              : "pending_review",
+            flag_reason: item.flag_reason || null,
+            recommendation: item.status === "compliant" ? "auto_approve"
+              : item.original_category ? "approve_with_review"
+              : item.status === "gap_detected" ? "request_employee_input"
+              : "flag_for_review",
+          }));
+
+          const flaggedItems = items.filter(
+            (item: Record<string, unknown>) =>
+              item.recommendation !== "auto_approve" && item.recommendation !== "request_employee_input"
+          );
+          const missingItems = (raw.items || [])
+            .filter((item: Record<string, unknown>) => item.status === "gap_detected")
+            .map((item: Record<string, unknown>) => ({
+              id: item.id || "EXP-GAP",
+              detected_gap: item.gap_detection?.toString() || item.description || "Transport gap detected",
+              estimated_amount: item.amount || 0,
+              currency: item.currency || "INR",
+              evidence: item.gap_detection?.toString() || "Gap detected between trip legs",
+              confidence: item.confidence || 67,
+              action_needed: "Confirm amount and provide details",
+            }));
+
+          const summary = raw.summary || {};
+          assemblyOutput = {
+            report: {
+              id: `RPT-${Date.now()}`,
+              traveler: raw.traveler?.name || "Unknown",
+              trip_summary: `${raw.trip?.destination || ""}, ${raw.trip?.dates || ""} — ${raw.trip?.purpose || ""}`,
+              total_amount: summary.total_amount || items.reduce((s: number, i: Record<string, unknown>) => s + (Number(i.amount) || 0), 0),
+              currency: summary.currency || "INR",
+              cost_center: raw.traveler?.cost_center || "",
+              approver: raw.traveler?.approver || "",
+              items,
+              flagged_items: flaggedItems,
+              missing_items: missingItems,
+              summary: {
+                total_items: items.length,
+                auto_approve_count: items.filter((i: Record<string, unknown>) => i.recommendation === "auto_approve").length,
+                review_count: flaggedItems.length,
+                missing_count: missingItems.length,
+                total_amount: summary.total_amount || 0,
+                overall_confidence: summary.avg_confidence || 90,
+              },
+            },
+          };
+        }
       } else {
         // Pass scenario and policy directly — prompt builder handles flexible shapes
         const messages = buildAssemblyMessages(scenario, policy);

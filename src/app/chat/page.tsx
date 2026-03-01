@@ -122,7 +122,10 @@ export default function ChatPage() {
         });
       } catch (err) {
         if (!cancelled) {
-          toast.error('Failed to assemble expense report. Please try again.');
+          console.error('Assembly error:', err);
+          toast.error('Failed to assemble expense report.', {
+            description: err instanceof Error ? err.message : String(err),
+          });
         }
       } finally {
         if (!cancelled) {
