@@ -53,10 +53,20 @@ export async function updateSession(request: NextRequest) {
   }
 
   // --- Role-based access control ---
-  const role: string =
+  // Check auth metadata first, then fall back to public.users table
+  let role: string =
     (user.user_metadata?.role as string) ??
     (user.app_metadata?.role as string) ??
-    "employee";
+    "";
+
+  if (!role) {
+    const { data: dbUser } = await supabase
+      .from("users")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    role = dbUser?.role ?? "employee";
+  }
 
   const isChat = pathname.startsWith("/chat");
   const isDashboard = pathname.startsWith("/dashboard");
