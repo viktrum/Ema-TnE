@@ -83,12 +83,68 @@ Phases:
 
 ---
 
-## Current State (End of Session 1)
+## 2026-03-02 00:30 IST — Phase 3 Merged + Code Review Fixes
+**Branch:** feature/phase-3-dashboard → merged to develop
+**PR:** #3 (https://github.com/viktrum/Ema-TnE/pull/3)
+**Gate 3:** PASS — build passes, tsc clean, code review fixes applied
+**Code review findings (3 issues fixed):**
+1. `reject` mutation missing `dashboard_reports.status` update → added (sets 'rejected')
+2. FK mismatch: `approvals.report_id` referenced `reports(id)` but used with `dashboard_reports.id` → dropped FK
+3. Supabase query builder `.eq()` return value discarded → fixed with reassignment
+**Migration 002:** Dropped FKs on `approvals` + `audit_log`, expanded `dashboard_reports.status` CHECK to include 'rejected', 'pending_info'
+**Decision:** Deep research results deferred to Phase 5/6 (ship working prototype first)
+
+---
+
+## 2026-03-02 01:00 IST — Phase 3.5 Planned: Bidirectional Realtime
+**Branch:** feature/phase-3.5-realtime (not started)
+**Status:** Plan approved, ready for implementation
+**Purpose:** Connect Tanya's chat ↔ Mihir's dashboard for side-by-side demo
+
+### Approach: scenario_id link + chat_messages realtime (D+C simplified)
+- **Flow 1 (Tanya→Mihir):** `report.submit` INSERTs into `dashboard_reports` using `scenario_id` (already exists). Dashboard subscribes to `postgres_changes` on `dashboard_reports`.
+- **Flow 2 (Mihir→Tanya):** Approval router INSERTs into `chat_messages` as Ema message. Chat page subscribes to `postgres_changes` on `chat_messages` filtered by `user_id`. Message appears in real-time AND persists on refresh.
+
+### Tasks
+1. Migration `003_realtime_bridge.sql`: Add `dashboard_reports` + `chat_messages` to realtime publication, add INSERT RLS policies
+2. `report.ts`: Submit mutation → INSERT `dashboard_reports` with data-driven mapper (works for Mumbai, Bangalore, London)
+3. `approval.ts`: Each mutation → INSERT `chat_messages` as Ema notification message
+4. `dashboard/page.tsx`: Switch realtime channel from `reports` to `dashboard_reports`
+5. `chat/page.tsx`: Add `chat_messages` realtime subscription with dedup logic
+
+### Gate 3.5 UATs (8 tests)
+- G3.5-01: Submit creates dashboard entry
+- G3.5-02: Dashboard receives in real-time (CRITICAL)
+- G3.5-03: Approve notification in chat (CRITICAL)
+- G3.5-04: Reject with reason in chat
+- G3.5-05: Ask Employee question in chat
+- G3.5-06: Notification persists on refresh
+- G3.5-07: No duplicate messages (dedup)
+- G3.5-08: Dashboard counts update after approval
+
+### Key Research Findings
+- Supabase Realtime respects RLS — events silently dropped if no SELECT policy
+- Publication changes are immediate on Cloud (no restart)
+- Server-side broadcast requires `realtime.send()` Postgres function — using `postgres_changes` on `chat_messages` instead (simpler)
+- `worker: true` on Supabase client prevents silent disconnections in background tabs
+- Phase 4 impact: mapper must be data-driven, not Mumbai-hardcoded
+
+### Files (~85 lines new code)
+- `supabase/migrations/003_realtime_bridge.sql` (NEW)
+- `src/server/routers/report.ts` (MODIFY)
+- `src/server/routers/approval.ts` (MODIFY)
+- `src/app/dashboard/page.tsx` (MODIFY)
+- `src/app/chat/page.tsx` (MODIFY)
+
+---
+
+## Current State (End of Session 2)
 - Phase 1: ✅ Merged to develop (PR #1)
-- Phase 2: ✅ Merged to develop (PR #2) — but chat hero needs redesign based on research
-- Phase 3: ⏸️ PR #3 open, inbox view built, NOT merged
+- Phase 2: ✅ Merged to develop (PR #2)
+- Phase 3: ✅ Merged to develop (PR #3) — code review fixes included
+- Phase 3.5: 📋 Planned — bidirectional realtime, ready for implementation
 - Phase 4-6: Not started
-- Deep research: Running in 4 tools (Perplexity, Gemini, Claude, ChatGPT) — results pending
+- Deep research: Results available, deferred to Phase 5/6
 - CodeRabbit/Greptile GitHub Apps: NOT installed
 
 **Deferred to Phase 5 (Polish):**
@@ -97,3 +153,8 @@ Phases:
 - Better visual hierarchy: message → table → reasoning → gap question
 - Streaming animation, typing indicator refinement
 - Mobile responsiveness
+- **Dashboard submitted report polish** — reports submitted via chat→dashboard bridge show raw assembly data instead of clean dashboard format:
+  - Severity logic inverted (high confidence → LOW, should use flag type not confidence)
+  - Flag reason is raw assembly text, needs human-readable formatting
+  - Sources show raw identifiers ("Email (PNR: ABC123)"), need clean labels ("Calendar", "CRM", "Policy")
+  - Reasoning section shows badges but no explanation text

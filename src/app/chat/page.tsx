@@ -144,10 +144,52 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenarioId]);
 
+  // Realtime: listen for Ema notifications (approval/reject/ask from manager)
+  useEffect(() => {
+    if (!userId) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel('chat-notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const msg = payload.new as any;
+          if (msg.role !== 'assistant') return;
+
+          // Only process notification messages from the approval router.
+          // Regular chat messages (saved by /api/chat SSE route) are already
+          // displayed via streaming — we must NOT re-add them here.
+          // Notifications have message_type='notification' (set by approval router).
+          if (msg.message_type !== 'notification') return;
+
+          addMessage({
+            id: msg.id,
+            role: 'assistant',
+            content: msg.content,
+            timestamp: new Date(msg.created_at).getTime(),
+          });
+          toast('New update from Ema');
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
   // Send message handler
   const handleSend = useCallback(
     async (text: string) => {
-      if (!report || hasSubmitted) return;
+      if (!report) return;
 
       setInputText('');
 
@@ -203,6 +245,7 @@ export default function ChatPage() {
         const decoder = new TextDecoder();
         let buffer = '';
         let fullContent = '';
+        let isJsonResponse = false;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -221,11 +264,49 @@ export default function ChatPage() {
               const event = JSON.parse(jsonStr);
 
               if (event.type === 'token') {
-                appendToStream(event.content);
                 fullContent += event.content;
+                // Detect JSON response on first non-whitespace character.
+                // Once detected, suppress all streaming — content will be
+                // set from the parsed response in the "done" handler.
+                const trimmed = fullContent.trimStart();
+                if (!isJsonResponse && (trimmed.startsWith('{') || trimmed.startsWith('```'))) {
+                  isJsonResponse = true;
+                }
+                if (!isJsonResponse) {
+                  appendToStream(event.content);
+                }
               } else if (event.type === 'done') {
                 if (event.fallback) setUsedFallback(true);
-                parseAndApplyActions(event.content, fullContent);
+                const finalContent = event.content || fullContent;
+
+                // Try to parse as JSON and extract the response text
+                // Strip markdown code fences if LLM wrapped JSON in ```json ... ```
+                const cleanedContent = finalContent
+                  .replace(/^[\s]*```(?:json)?\s*/i, '')
+                  .replace(/\s*```[\s]*$/, '')
+                  .trim();
+                let displayContent: string | null = null;
+                try {
+                  const parsed = JSON.parse(cleanedContent);
+                  if (parsed?.response) {
+                    displayContent = parsed.response;
+                  }
+                  parseAndApplyActions(finalContent, fullContent);
+                } catch {
+                  // Not valid JSON — fall through
+                  parseAndApplyActions(finalContent, fullContent);
+                }
+
+                if (displayContent) {
+                  // JSON response: replace whatever is in the message with
+                  // just the human-readable text.
+                  updateMessage(assistantMsgId, displayContent);
+                } else if (isJsonResponse) {
+                  // Started with { but failed to parse or had no .response —
+                  // show the raw content so the user sees something.
+                  updateMessage(assistantMsgId, fullContent);
+                }
+                // else: plain text was already streamed via appendToStream
               } else if (event.type === 'error') {
                 toast.error(event.content || 'An error occurred.');
               }
@@ -251,20 +332,24 @@ export default function ChatPage() {
 
   // Parse SSE response for embedded actions
   const parseAndApplyActions = useCallback(
-    (fullResponse: string, _streamedContent: string) => {
+    (fullResponse: string, streamedContent: string) => {
       try {
-        // Try parsing the full response as JSON (some fallbacks return structured data)
-        // Actions may be embedded in the response object
+        // Strip markdown code fences if present
+        const cleaned = fullResponse
+          .replace(/^[\s]*```(?:json)?\s*/i, '')
+          .replace(/\s*```[\s]*$/, '')
+          .trim();
+        // Try parsing the full response as JSON (LLM sometimes returns structured data)
         const parsed =
-          typeof fullResponse === 'string'
+          typeof cleaned === 'string'
             ? (() => {
                 try {
-                  return JSON.parse(fullResponse);
+                  return JSON.parse(cleaned);
                 } catch {
                   return null;
                 }
               })()
-            : fullResponse;
+            : null;
 
         if (parsed?.actions && Array.isArray(parsed.actions)) {
           for (const action of parsed.actions) {
@@ -286,7 +371,7 @@ export default function ChatPage() {
         }
       } catch {
         // Non-JSON response text, check for keywords
-        const lower = fullResponse.toLowerCase();
+        const lower = (fullResponse || streamedContent).toLowerCase();
         if (
           lower.includes('submit') &&
           (lower.includes('ready') || lower.includes('confirm') || lower.includes('go ahead'))
@@ -498,7 +583,7 @@ export default function ChatPage() {
         {/* Chat input — fixed at bottom */}
         <ChatInput
           onSend={handleSend}
-          disabled={isAssembling || isStreaming || hasSubmitted}
+          disabled={isAssembling || isStreaming}
           demoResponse={demoResponse}
           value={inputText}
           onChange={setInputText}
