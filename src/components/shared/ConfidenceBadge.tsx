@@ -5,7 +5,8 @@ interface ConfidenceBadgeProps {
 }
 
 export function ConfidenceBadge({ confidence }: ConfidenceBadgeProps) {
-  const percentage = Math.round(confidence * 100);
+  // Confidence comes as 0-100 integer from spec (e.g., 94, 67)
+  const percentage = Math.round(confidence > 1 ? confidence : confidence * 100);
 
   let dotColor: string;
   let textColor: string;
