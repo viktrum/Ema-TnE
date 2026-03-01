@@ -443,31 +443,35 @@ export default function ChatPage() {
                       </table>
                     </div>
 
-                    {/* Dinner reasoning — PRE-EXPANDED (single block, not duplicated) */}
-                    {report.flagged_items.length > 0 && (
-                      <div className="rounded-lg border-l-[3px] border-l-[#F59E0B] bg-[#FEF3C7] p-3">
+                    {/* Flagged item reasoning — PRE-EXPANDED */}
+                    {report.flagged_items.map((flagged) => (
+                      <div key={`flag-${flagged.id}`} className="rounded-lg border-l-[3px] border-l-[#F59E0B] bg-[#FEF3C7] p-3">
                         <div className="mb-2 flex items-center gap-2">
-                          <span className="text-xs font-bold uppercase tracking-wide text-amber-700">Why Client Entertainment?</span>
-                          <span className="rounded bg-amber-200/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                            {report.flagged_items[0].original_category} → {report.flagged_items[0].category}
+                          <span className="text-xs font-bold uppercase tracking-wide text-amber-700">
+                            Why {flagged.category}?
                           </span>
+                          {flagged.original_category && (
+                            <span className="rounded bg-amber-200/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                              {flagged.original_category} → {flagged.category}
+                            </span>
+                          )}
                         </div>
                         <p className="text-[13px] leading-relaxed text-amber-900">
-                          {report.flagged_items[0].reasoning}
+                          {flagged.reasoning}
                         </p>
                       </div>
-                    )}
+                    ))}
 
-                    {/* Gap question — taxi */}
-                    {report.missing_items.length > 0 && (
-                      <div className="rounded-lg border-l-[3px] border-l-[#EAB308] bg-[#FEF9C3] p-3">
+                    {/* Gap detection */}
+                    {report.missing_items.map((gap) => (
+                      <div key={`gap-${gap.id}`} className="rounded-lg border-l-[3px] border-l-[#EAB308] bg-[#FEF9C3] p-3">
                         <p className="text-[13px] text-amber-900">
-                          <strong>Gap detected:</strong> {report.missing_items[0].detected_gap}
-                          {' '}Estimated ~₹{report.missing_items[0].estimated_amount.toLocaleString('en-IN')}.
-                          {' '}Was it a cash taxi? Approximate amount?
+                          <strong>Gap detected:</strong> {gap.detected_gap}
+                          {' '}Estimated ~₹{gap.estimated_amount.toLocaleString('en-IN')}.
+                          {' '}{gap.action_needed}
                         </p>
                       </div>
-                    )}
+                    ))}
                   </div>
                 ) : null}
               </MessageBubble>
