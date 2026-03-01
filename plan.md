@@ -46,6 +46,17 @@ Phases:
 - No pre-computed categories/reasoning — AI generates everything
 - Enables: custom demos, new clients, live data feeds
 
+---
+
+## 2026-03-01 21:45 IST — Phase 2 Completed
+**Branch:** feature/phase-2-chat-ui → merging to develop
+**PR:** #2 (https://github.com/viktrum/Ema-TnE/pull/2)
+**Gate 2:** PASS (automated: 8/8, manual: 5/5 confirmed by user)
+**Key deliverables:** Chat UI, hybrid assembly engine (deterministic + parallel AI), expense table, reasoning panels, Zustand stores, per-item Haiku categorization, constrained prompts
+**Commits:** 14 (feat + fixes for fallback transform, confidence scale, dynamic panels, constrained prompts, re-categorization logic)
+**Code review:** Internal found confidence scale bug + schema mismatches. CodeRabbit CLI found 2 issues.
+**Learnings:** Seed data shape ≠ Zod schema shape (must verify). AI re-categorizes everything unless constrained. Parallel Haiku calls ~2s vs monolithic prompt 20-30s.
+
 **Deferred to Phase 5 (Polish):**
 - Chat message UI/UX redesign — current messages are functional but not polished
 - Use `frontend-design` skill for pixel-perfect chat bubble layout
