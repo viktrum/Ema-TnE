@@ -40,6 +40,12 @@ Phases:
 - Duplicate reasoning blocks (flagged + re-categorized) — consolidated to single block
 - Duplicate Vendor column removed, proper policy_status matching
 
+**P2 — Role-Based Dashboard Views (Future):**
+- Mihir (manager): inbox view — done now ✅
+- Chitra (CHRO): org-wide dashboard — hero metric "4 hours", 81% auto-approved, compliance trends, flag type distribution
+- Admin: full system view — all reports, metrics, audit trail
+- Switch view based on user role from public.users table
+
 **P2 — Data-as-Config (Future):**
 - Drop a new JSON file → engine processes it → new scenario works without code changes
 - Scenario files in `scenarios/` directory with traveler, transactions, context
@@ -56,6 +62,34 @@ Phases:
 **Commits:** 14 (feat + fixes for fallback transform, confidence scale, dynamic panels, constrained prompts, re-categorization logic)
 **Code review:** Internal found confidence scale bug + schema mismatches. CodeRabbit CLI found 2 issues.
 **Learnings:** Seed data shape ≠ Zod schema shape (must verify). AI re-categorizes everything unless constrained. Parallel Haiku calls ~2s vs monolithic prompt 20-30s.
+
+---
+
+## 2026-03-01 22:15 IST — Phase 3 Ready (Pending Merge)
+**Branch:** feature/phase-3-dashboard
+**PR:** #3 (https://github.com/viktrum/Ema-TnE/pull/3)
+**Gate 3:** PASS (automated: 6/10, manual: 4 pending)
+**Key deliverables:** Dashboard 3-panel layout, NorthStarBanner ("4 hours"), ReportList (38 auto-approved), FlaggedPanel (9 flagged with actions), StatsPanel (CHRO metrics), tRPC routers (dashboard + approval), Supabase Realtime subscriptions, reject/ask modals
+**Code review:** Internal found critical role check bug (fixed). CodeRabbit CLI found 1 cosmetic issue.
+**Status:** NOT MERGED — waiting for Phase 2 deep research results before merging
+
+---
+
+## 2026-03-01 22:45 IST — Phase 3 Dashboard Redesigned
+**Branch:** feature/phase-3-dashboard
+**PR:** #3 (https://github.com/viktrum/Ema-TnE/pull/3)
+**Change:** Replaced 3-panel dashboard with manager inbox view. "4 hours" hero metric moved to future CHRO view. Manager sees: compact stats bar + flagged items inbox with expand/collapse + action buttons.
+**Status:** NOT MERGED — waiting for: (1) deep research results, (2) manual testing, (3) possible further changes
+
+---
+
+## Current State (End of Session 1)
+- Phase 1: ✅ Merged to develop (PR #1)
+- Phase 2: ✅ Merged to develop (PR #2) — but chat hero needs redesign based on research
+- Phase 3: ⏸️ PR #3 open, inbox view built, NOT merged
+- Phase 4-6: Not started
+- Deep research: Running in 4 tools (Perplexity, Gemini, Claude, ChatGPT) — results pending
+- CodeRabbit/Greptile GitHub Apps: NOT installed
 
 **Deferred to Phase 5 (Polish):**
 - Chat message UI/UX redesign — current messages are functional but not polished

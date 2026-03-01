@@ -1,6 +1,12 @@
 # Ema TnE - Project Rules
 
-> Updated at: 2026-03-01 19:35 IST
+> Updated at: 2026-03-01 22:45 IST
+
+## Session Continuity
+To restore context from a previous session, read these files in order:
+1. `plan.md` — Current state, all decisions, and priority task list
+2. `SESSION-SUMMARY.md` — Chronological log of all sessions with what happened and what's next
+3. `~/.claude/projects/-Users-piyushmayank-Projects-Ema-TnE/memory/MEMORY.md` — Persistent memory
 
 ## MANDATORY: Post-Phase Checklist (DO NOT SKIP)
 > Updated at: 2026-03-01 19:35 IST
@@ -81,10 +87,11 @@ src/
     supabase/       # Supabase client (browser), server, middleware helpers
     trpc/           # tRPC client, server caller, and React provider
     llm/            # LLM client wrapper, Claude provider, prompts
+    engine/         # Deterministic assembly engine (assembler, types)
     utils.ts        # shadcn/ui utility (cn function)
   server/
     trpc/           # tRPC initialization (router, procedures, context with auth)
-    routers/        # tRPC route definitions (health, scenario, report)
+    routers/        # tRPC route definitions (health, scenario, report, dashboard, approval)
     schemas/        # Zod schemas shared between tRPC and LLM (assembly, chat, categorize)
   stores/           # Zustand stores (auth, chat, dashboard)
   components/
