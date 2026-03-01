@@ -106,12 +106,21 @@ docs/               # Code review evaluation, git commands log
 ```
 
 ## Conventions
+> Updated at: 2026-03-02 01:30 IST
 - Import alias: `@/*` maps to `./src/*`
 - Use `createClient()` from `@/lib/supabase/server` in Server Components
 - Use `createClient()` from `@/lib/supabase/client` in Client Components
 - Add new tRPC routers in `src/server/routers/` and register them in `_app.ts`
 - Use `publicProcedure` for unauthenticated endpoints
 - shadcn/ui components go in `src/components/ui/` (managed by `npx shadcn add`)
+
+## Realtime Patterns
+> Updated at: 2026-03-02 01:30 IST
+- **Cross-user notifications:** INSERT into target table (e.g. `chat_messages`) → client subscribes to `postgres_changes` → message appears in real-time. Do NOT use JS client `channel.send()` from server-side code.
+- **Realtime publication:** Tables must be in `supabase_realtime` publication. Currently: `reports`, `approvals`, `dashboard_reports`, `chat_messages`.
+- **RLS + Realtime:** Events are silently dropped if the subscriber can't SELECT the row. Always verify SELECT policy exists.
+- **Dedup on chat page:** Chat messages created via SSE streaming are added to Zustand locally AND INSERTed to `chat_messages` server-side. The realtime subscription fires for those INSERTs — must skip messages already in Zustand to avoid duplicates.
+- **`reports` ↔ `dashboard_reports` link:** Uses `scenario_id` (exists on both tables). No bridge column. `approvals.report_id` is TEXT (no FK) — shared by chat flow (text IDs) and dashboard flow (stringified SERIAL IDs).
 
 ## Workflow
 - Workflow enforcement is enabled (`.workflow-enforced`)
