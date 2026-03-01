@@ -5,14 +5,6 @@
 -- ============================================================================
 
 -- ============================================================================
--- HELPER FUNCTION
--- ============================================================================
-
-CREATE OR REPLACE FUNCTION get_user_role() RETURNS TEXT AS $$
-  SELECT role FROM users WHERE id = auth.uid()
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
-
--- ============================================================================
 -- TABLE 1: users
 -- ============================================================================
 
@@ -31,6 +23,11 @@ CREATE TABLE users (
   avatar_initials TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Helper function to get current user's role (must be after users table)
+CREATE OR REPLACE FUNCTION get_user_role() RETURNS TEXT AS $$
+  SELECT role FROM users WHERE id = auth.uid()
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
