@@ -359,85 +359,70 @@ export default function ChatPage() {
               >
                 {isFirstAssistant && report ? (
                   <div className="mt-3 space-y-3">
-                    {/* Embedded expense table */}
+                    {/* Clean expense table */}
                     <div className="overflow-x-auto rounded-lg border border-gray-200">
                       <table className="w-full text-left text-sm">
                         <thead>
                           <tr className="bg-gray-50 text-xs font-medium uppercase tracking-wide text-gray-500">
-                            <th className="px-3 py-2">Item</th>
-                            <th className="px-3 py-2">Vendor</th>
-                            <th className="px-3 py-2">Date</th>
+                            <th className="px-3 py-2 w-8">#</th>
+                            <th className="px-3 py-2">Description</th>
                             <th className="px-3 py-2 text-right">Amount</th>
                             <th className="px-3 py-2">Category</th>
-                            <th className="px-3 py-2">Status</th>
+                            <th className="px-3 py-2 text-center">Confidence</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {report.items.map((item) => (
-                            <tr
-                              key={item.id}
-                              className={
-                                item.policy_status === 'flagged'
-                                  ? 'bg-amber-50'
-                                  : ''
-                              }
-                            >
-                              <td className="px-3 py-2 font-medium text-gray-800">
-                                {item.description}
-                              </td>
-                              <td className="px-3 py-2 text-gray-600">
-                                {item.vendor}
-                              </td>
-                              <td className="px-3 py-2 text-gray-600">
-                                {item.date}
-                              </td>
-                              <td className="px-3 py-2 text-right font-mono text-gray-800">
-                                {item.currency === 'INR' ? '₹' : item.currency}{' '}
-                                {item.amount.toLocaleString('en-IN')}
-                              </td>
-                              <td className="px-3 py-2">
-                                <span
-                                  className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                                    item.original_category &&
-                                    item.original_category !== item.category
-                                      ? 'bg-blue-100 text-blue-700'
-                                      : 'bg-gray-100 text-gray-600'
-                                  }`}
-                                >
-                                  {item.category}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2">
-                                {item.policy_status === 'auto_approve' && (
-                                  <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                                    Auto-approved
+                          {report.items.map((item, idx) => {
+                            const isDinner = item.original_category !== null;
+                            const isGap = item.recommendation === 'request_employee_input';
+                            return (
+                              <tr
+                                key={item.id}
+                                className={
+                                  isDinner ? 'bg-[#FEF3C7] border-l-[3px] border-l-[#F59E0B]'
+                                  : isGap ? 'bg-[#FEF9C3] border-l-[3px] border-l-[#EAB308]'
+                                  : 'hover:bg-gray-50'
+                                }
+                              >
+                                <td className="px-3 py-2 text-xs text-gray-400">{idx + 1}</td>
+                                <td className="px-3 py-2">
+                                  <span className="font-medium text-gray-800">{item.description}</span>
+                                  <span className="ml-2 text-xs text-gray-400">{item.date}</span>
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-gray-800">
+                                  ₹{item.amount.toLocaleString('en-IN')}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                                    isDinner ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                                  }`}>
+                                    {item.category}
                                   </span>
-                                )}
-                                {item.policy_status === 'flagged' && (
-                                  <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                                    Flagged
+                                  {isDinner && (
+                                    <span className="ml-1 text-[10px] text-gray-400 line-through">{item.original_category}</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className={`inline-flex items-center gap-1 text-xs font-medium ${
+                                    item.confidence > 90 ? 'text-green-600' : item.confidence >= 70 ? 'text-amber-600' : 'text-red-600'
+                                  }`}>
+                                    <span className={`h-1.5 w-1.5 rounded-full ${
+                                      item.confidence > 90 ? 'bg-green-500' : item.confidence >= 70 ? 'bg-amber-500' : 'bg-red-500'
+                                    }`} />
+                                    {item.confidence}%
                                   </span>
-                                )}
-                                {item.policy_status === 'review' && (
-                                  <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                                    Review
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                         <tfoot>
-                          <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                            <td className="px-3 py-2" colSpan={3}>
-                              Total
+                          <tr className="border-t-2 border-gray-200 bg-gray-50">
+                            <td className="px-3 py-2" colSpan={2}>
+                              <span className="font-semibold text-gray-700">Total</span>
                             </td>
-                            <td className="px-3 py-2 text-right font-mono">
-                              {report.currency === 'INR' ? '₹' : report.currency}{' '}
-                              {report.total_amount.toLocaleString('en-IN')}
+                            <td className="px-3 py-2 text-right font-mono font-semibold text-gray-800">
+                              ₹{report.total_amount.toLocaleString('en-IN')}
                             </td>
                             <td className="px-3 py-2" colSpan={2} />
                           </tr>
@@ -445,64 +430,31 @@ export default function ChatPage() {
                       </table>
                     </div>
 
-                    {/* Dinner reasoning — PRE-EXPANDED */}
+                    {/* Dinner reasoning — PRE-EXPANDED (single block, not duplicated) */}
                     {report.flagged_items.length > 0 && (
-                      <div className="space-y-2">
-                        {report.flagged_items.map((item) => (
-                          <div
-                            key={`reasoning-${item.id}`}
-                            className="rounded-lg border border-amber-200 bg-amber-50 p-3"
-                          >
-                            <div className="mb-1 flex items-center gap-2">
-                              <span className="text-sm font-semibold text-amber-800">
-                                Reasoning: {item.description}
-                              </span>
-                              {item.flag_reason && (
-                                <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-800">
-                                  {item.flag_reason}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm leading-relaxed text-amber-900">
-                              {item.reasoning}
-                            </p>
-                            {item.recommendation && (
-                              <p className="mt-1 text-xs text-amber-700">
-                                <strong>Recommendation:</strong>{' '}
-                                {item.recommendation}
-                              </p>
-                            )}
-                          </div>
-                        ))}
+                      <div className="rounded-lg border-l-[3px] border-l-[#F59E0B] bg-[#FEF3C7] p-3">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wide text-amber-700">Why Client Entertainment?</span>
+                          <span className="rounded bg-amber-200/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                            {report.flagged_items[0].original_category} → {report.flagged_items[0].category}
+                          </span>
+                        </div>
+                        <p className="text-[13px] leading-relaxed text-amber-900">
+                          {report.flagged_items[0].reasoning}
+                        </p>
                       </div>
                     )}
 
-                    {/* Items with re-categorization reasoning (non-flagged) */}
-                    {report.items
-                      .filter(
-                        (item) =>
-                          item.original_category &&
-                          item.original_category !== item.category &&
-                          item.policy_status !== 'flagged',
-                      )
-                      .map((item) => (
-                        <div
-                          key={`recat-${item.id}`}
-                          className="rounded-lg border border-blue-200 bg-blue-50 p-3"
-                        >
-                          <div className="mb-1 flex items-center gap-2">
-                            <span className="text-sm font-semibold text-blue-800">
-                              Re-categorized: {item.description}
-                            </span>
-                            <span className="rounded bg-blue-200 px-1.5 py-0.5 text-[10px] font-medium text-blue-800">
-                              {item.original_category} → {item.category}
-                            </span>
-                          </div>
-                          <p className="text-sm leading-relaxed text-blue-900">
-                            {item.reasoning}
-                          </p>
-                        </div>
-                      ))}
+                    {/* Gap question — taxi */}
+                    {report.missing_items.length > 0 && (
+                      <div className="rounded-lg border-l-[3px] border-l-[#EAB308] bg-[#FEF9C3] p-3">
+                        <p className="text-[13px] text-amber-900">
+                          <strong>Gap detected:</strong> {report.missing_items[0].detected_gap}
+                          {' '}Estimated ~₹{report.missing_items[0].estimated_amount.toLocaleString('en-IN')}.
+                          {' '}Was it a cash taxi? Approximate amount?
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : null}
               </MessageBubble>
@@ -554,46 +506,11 @@ function getInitials(name: string): string {
 function buildInitialMessage(report: {
   traveler: string;
   trip_summary: string;
-  items: Array<{ description: string }>;
-  missing_items: Array<{
-    detected_gap: string;
-    estimated_amount: number;
-    currency: string;
-    action_needed: string;
-  }>;
   summary: {
     total_items: number;
     auto_approve_count: number;
-    review_count: number;
-    missing_count: number;
   };
 }): string {
-  const parts: string[] = [];
-
-  parts.push(
-    `<p>Hi <strong>${report.traveler}</strong>, I've assembled your expense report for <strong>${report.trip_summary}</strong>.</p>`,
-  );
-
-  parts.push(
-    `<p>I found <strong>${report.summary.total_items} expenses</strong> — ` +
-      `<strong>${report.summary.auto_approve_count}</strong> auto-approved, ` +
-      `<strong>${report.summary.review_count}</strong> need review` +
-      (report.summary.missing_count > 0
-        ? `, and <strong>${report.summary.missing_count}</strong> potential missing item${report.summary.missing_count > 1 ? 's' : ''}`
-        : '') +
-      '.</p>',
-  );
-
-  // Gap question for missing items (e.g., taxi)
-  if (report.missing_items.length > 0) {
-    const gap = report.missing_items[0];
-    parts.push(
-      `<p style="margin-top:8px; padding:8px 12px; background:#FEF3C7; border-radius:8px; border-left:3px solid #F59E0B;">` +
-        `<strong>Detected gap:</strong> ${gap.detected_gap}<br/>` +
-        `Estimated amount: <strong>${gap.currency === 'INR' ? '₹' : gap.currency} ${gap.estimated_amount.toLocaleString('en-IN')}</strong><br/>` +
-        `${gap.action_needed}</p>`,
-    );
-  }
-
-  return parts.join('');
+  const firstName = report.traveler.split(' ')[0];
+  return `Hey ${firstName}, welcome back from Mumbai. I've put together your expense report — ${report.summary.total_items} items, ${report.summary.auto_approve_count} auto-approved. Take a look.`;
 }
