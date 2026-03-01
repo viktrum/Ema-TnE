@@ -72,10 +72,18 @@ export default function DashboardPage() {
       }
 
       // Verify role is manager/chro/admin
-      const role = user.user_metadata?.role?.toLowerCase() || '';
+      // Auth metadata may be empty (dashboard-created users) — check public.users
+      let role = user.user_metadata?.role?.toLowerCase() || '';
+      if (!role) {
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        role = dbUser?.role || '';
+      }
       const allowedRoles = ['manager', 'chro', 'admin'];
       if (!allowedRoles.includes(role)) {
-        toast.error('Access denied. Manager or admin role required.');
         router.push('/chat');
         return;
       }
