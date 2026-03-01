@@ -56,8 +56,8 @@ export const reportRouter = router({
         }
       }
 
-      // DETERMINISTIC ASSEMBLY — instant, no LLM call
-      const report = assembleReport(scenarioData, policy as unknown as RawPolicy);
+      // HYBRID ASSEMBLY — deterministic matching + AI categorization (parallel)
+      const report = await assembleReport(scenarioData, policy as unknown as RawPolicy);
 
       const latencyMs = Date.now() - startTime;
 

@@ -40,6 +40,12 @@ Phases:
 - Duplicate reasoning blocks (flagged + re-categorized) — consolidated to single block
 - Duplicate Vendor column removed, proper policy_status matching
 
+**P2 — Data-as-Config (Future):**
+- Drop a new JSON file → engine processes it → new scenario works without code changes
+- Scenario files in `scenarios/` directory with traveler, transactions, context
+- No pre-computed categories/reasoning — AI generates everything
+- Enables: custom demos, new clients, live data feeds
+
 **Deferred to Phase 5 (Polish):**
 - Chat message UI/UX redesign — current messages are functional but not polished
 - Use `frontend-design` skill for pixel-perfect chat bubble layout

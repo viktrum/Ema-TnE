@@ -1,16 +1,18 @@
 import type { RawScenario, RawPolicy, RawTransaction, AssembledItem, AssembledReport } from "./types";
+import { generateLLM, isLLMAvailable } from "@/lib/llm/client";
+import { buildItemCategorizePrompt } from "@/lib/llm/prompts/categorize-item";
 
 /**
- * Deterministic assembly engine.
- * Takes raw scenario + policy data and produces a complete expense report
- * WITHOUT calling any LLM. Reasoning text is template-based.
+ * Hybrid assembly engine.
  *
- * The LLM is only called AFTER this, to enrich reasoning for flagged items.
+ * Phase 1 (deterministic, instant): fetch, match context, lookup policy
+ * Phase 2 (AI, parallel ~2s): categorize each item + generate reasoning
+ * Phase 3 (deterministic, instant): compile report, recommendations, gaps
  */
-export function assembleReport(
+export async function assembleReport(
   scenario: RawScenario,
   policy: RawPolicy,
-): AssembledReport {
+): Promise<AssembledReport> {
   const rawItems: RawTransaction[] = (scenario.items || scenario.transactions || []) as RawTransaction[];
   const context = scenario.context || {};
   const traveler = scenario.traveler || { name: "Unknown", cost_center: "", approver: "", employee_id: "" };
@@ -20,40 +22,86 @@ export function assembleReport(
     purpose: scenario.purpose || "",
     type: scenario.trip_type || "domestic",
   };
-  const isDomestic = (trip.type || scenario.trip_type) === "domestic";
+  const tripType = (trip.type || scenario.trip_type || "domestic") as "domestic" | "international";
+  const isDomestic = tripType === "domestic";
   const policyRules = isDomestic ? policy.domestic : policy.international;
 
-  // Step 1-5: Process each transaction deterministically
+  // Phase 1: Deterministic — match context per item
+  const matchedItems = rawItems.map((txn) => ({
+    txn,
+    matchedContext: matchContext(txn, context, policyRules),
+  }));
+
+  // Phase 2: AI categorization — parallel calls
+  const useAI = isLLMAvailable() && process.env.FALLBACK_MODE !== "true";
+  let aiResults: Array<{ category: string; confidence: number; reasoning: string } | null>;
+
+  if (useAI) {
+    // Run all 7 items in parallel
+    aiResults = await Promise.all(
+      matchedItems.map(async ({ txn, matchedContext }) => {
+        try {
+          const messages = buildItemCategorizePrompt(
+            {
+              description: (txn.description || "").replace(/ — .*$/, ""),
+              amount: txn.amount || 0,
+              currency: txn.currency || "INR",
+              date: txn.date || "",
+              payment_method: txn.payment_method || "corporate_card",
+              has_receipt: txn.has_receipt ?? true,
+              merchant_category: txn.original_category,
+            },
+            matchedContext,
+            tripType,
+          );
+          const response = await generateLLM(messages, { timeout: 10000, maxTokens: 256 });
+          const parsed = JSON.parse(extractJSON(response.content));
+          return {
+            category: parsed.category || txn.category,
+            confidence: typeof parsed.confidence === "number" ? parsed.confidence : txn.confidence,
+            reasoning: parsed.reasoning || "",
+          };
+        } catch {
+          // AI failed for this item — use fallback
+          return null;
+        }
+      }),
+    );
+  } else {
+    aiResults = rawItems.map(() => null);
+  }
+
+  // Phase 3: Deterministic — compile report
   const items: AssembledItem[] = rawItems.map((txn, i) => {
-    const isRecategorized = txn.status === "re-categorized" && !!txn.re_categorization;
+    const ai = aiResults[i];
     const isGap = txn.status === "gap_detected";
-    const policyCheck = txn.policy_check || { limit: 0, within_limit: true, applicable_rule: "" };
     const recat = txn.re_categorization;
     const gap = txn.gap_detection;
+    const policyCheck = txn.policy_check || { limit: 0, within_limit: true, applicable_rule: "" };
 
-    // Match context sources
-    const matchedSources = matchSources(txn, context);
+    // Use AI result if available, else fall back to seed data
+    const category = ai?.category || txn.category || "Miscellaneous";
+    const confidence = ai?.confidence || txn.confidence || 80;
+    const reasoning = ai?.reasoning || buildFallbackReasoning(txn, policyCheck, recat, gap);
 
-    // Build confidence score deterministically
-    const confidence = scoreConfidence(txn, matchedSources, isRecategorized, isGap);
+    // Determine if this was re-categorized (AI changed the merchant category)
+    const originalCategory = recat?.from ||
+      (ai && ai.category !== txn.original_category && txn.original_category !== txn.category ? txn.original_category : null) ||
+      (txn.status === "re-categorized" ? (recat?.from || null) : null);
 
-    // Build reasoning from templates
-    const reasoning = buildReasoning(txn, matchedSources, policyCheck, recat, gap, isRecategorized, isGap);
+    const isRecategorized = originalCategory !== null;
 
-    // Determine policy status
     const policyStatus = isRecategorized ? "within_policy_after_recategorization"
       : isGap ? "pending_review"
       : policyCheck.within_limit ? "within_policy"
       : "exceeds_policy";
 
-    // Determine recommendation
     const recommendation = isRecategorized ? "approve_with_review"
       : isGap ? "request_employee_input"
-      : txn.status === "compliant" && confidence >= 95 ? "auto_approve"
+      : confidence >= 95 && policyCheck.within_limit ? "auto_approve"
       : txn.status === "compliant" ? "auto_approve"
       : "flag_for_review";
 
-    // Clean description (remove " — ..." suffix from seed data)
     const description = (txn.description || "").replace(/ — .*$/, "");
 
     return {
@@ -63,26 +111,24 @@ export function assembleReport(
       date: txn.date || "",
       amount: txn.amount || 0,
       currency: txn.currency || "INR",
-      category: txn.category || "Miscellaneous",
-      original_category: isRecategorized ? (recat?.from || null) : null,
+      category,
+      original_category: isRecategorized ? originalCategory : null,
       confidence,
-      sources: txn.sources || matchedSources,
+      sources: txn.sources || ["policy"],
       reasoning,
       policy_status: policyStatus,
       flag_reason: isRecategorized
-        ? `Re-categorized from ${recat?.from} to ${recat?.to}. ${policyCheck.applicable_rule}`
+        ? `Re-categorized from ${originalCategory} to ${category}. ${policyCheck.applicable_rule}`
         : isGap ? "Gap detected — needs employee confirmation"
         : null,
       recommendation,
     };
   });
 
-  // Flagged items = approve_with_review or flag_for_review
   const flaggedItems = items.filter(
-    (item) => item.recommendation === "approve_with_review" || item.recommendation === "flag_for_review"
+    (item) => item.recommendation === "approve_with_review" || item.recommendation === "flag_for_review",
   );
 
-  // Missing items from gap detection
   const missingItems = rawItems
     .filter((txn) => txn.status === "gap_detected")
     .map((txn) => {
@@ -102,7 +148,6 @@ export function assembleReport(
       };
     });
 
-  // Summary
   const totalAmount = scenario.summary?.total_amount ||
     items.reduce((sum, item) => sum + item.amount, 0);
   const autoApproveCount = items.filter((i) => i.recommendation === "auto_approve").length;
@@ -132,89 +177,99 @@ export function assembleReport(
   };
 }
 
-// --- Internal helpers ---
+// --- Helpers ---
 
-function matchSources(
+function matchContext(
   txn: RawTransaction,
   context: RawScenario["context"],
-): string[] {
-  const sources: string[] = [];
+  policyRules: RawPolicy["domestic"],
+) {
+  const matched: {
+    calendar?: Array<{ title: string; time?: string; attendees?: string[]; location?: string }>;
+    crm?: Array<{ account_name: string; deal_value?: number; stage?: string; contact_name?: string; contact_title?: string }>;
+    email?: Array<{ subject: string; type?: string }>;
+    policy_limits?: Array<{ category: string; limit: number; rule: string }>;
+  } = {};
 
-  // Card source
-  if (txn.payment_method === "corporate_card") sources.push("corporate_card");
-
-  // Calendar match — check if any calendar event is on the same date
-  if (context?.calendar?.some((evt) => evt.date === txn.date)) {
-    sources.push("calendar");
+  // Match calendar events on same date
+  if (context?.calendar) {
+    const dayEvents = context.calendar.filter((evt) => evt.date === txn.date);
+    if (dayEvents.length > 0) {
+      matched.calendar = dayEvents.map((evt) => ({
+        title: evt.title,
+        time: evt.time,
+        attendees: evt.attendees,
+        location: evt.location,
+      }));
+    }
   }
 
-  // CRM match — if calendar has client attendees and CRM has deals
-  if (context?.crm && context.crm.length > 0 && context?.calendar?.some(
-    (evt) => evt.date === txn.date && evt.attendees?.some((a) => !a.includes("nexgen"))
-  )) {
-    sources.push("crm");
+  // Match CRM records (if calendar has external attendees)
+  if (context?.crm && context.crm.length > 0) {
+    const hasExternalAttendee = context.calendar?.some(
+      (evt) => evt.date === txn.date && evt.attendees?.some((a) => !a.includes("nexgen")),
+    );
+    if (hasExternalAttendee) {
+      matched.crm = context.crm.map((c) => ({
+        account_name: c.account_name,
+        deal_value: c.deal_value,
+        stage: c.stage,
+        contact_name: c.contact_name,
+        contact_title: c.contact_title,
+      }));
+    }
   }
 
-  // Email match — check for booking confirmations
-  if (context?.email?.some((e) =>
-    e.subject?.toLowerCase().includes(txn.description?.toLowerCase().split(" ")[0] || "___")
-  )) {
-    sources.push("email");
+  // Match email confirmations
+  if (context?.email) {
+    const desc = (txn.description || "").toLowerCase();
+    const matchedEmails = context.email.filter(
+      (e) => e.subject?.toLowerCase().includes(desc.split(" ")[0] || "___"),
+    );
+    if (matchedEmails.length > 0) {
+      matched.email = matchedEmails.map((e) => ({ subject: e.subject, type: e.type }));
+    }
   }
 
-  // Policy always applies
-  sources.push("policy");
+  // Policy limits for likely categories
+  if (policyRules?.meals) {
+    const limits: Array<{ category: string; limit: number; rule: string }> = [];
+    if (policyRules.meals.standard_per_day)
+      limits.push({ category: "Personal Meal", limit: policyRules.meals.standard_per_day, rule: "Standard meal per day" });
+    if (policyRules.meals.client_entertainment_per_event)
+      limits.push({ category: "Client Entertainment", limit: policyRules.meals.client_entertainment_per_event, rule: "Client entertainment per event" });
+    if (policyRules.transport?.no_receipt_threshold)
+      limits.push({ category: "No-receipt threshold", limit: policyRules.transport.no_receipt_threshold, rule: "No receipt required below this" });
+    matched.policy_limits = limits;
+  }
 
-  return sources.length > 0 ? sources : txn.sources || ["policy"];
+  return matched;
 }
 
-function scoreConfidence(
+function buildFallbackReasoning(
   txn: RawTransaction,
-  sources: string[],
-  isRecategorized: boolean,
-  isGap: boolean,
-): number {
-  // Use seed confidence if available (it's already well-calibrated)
-  if (txn.confidence && txn.confidence > 0) return txn.confidence;
-
-  // Fallback formula
-  let score = 60;
-  score += sources.length * 10; // +10 per source
-  if (!txn.has_receipt && txn.amount > 500) score -= 20;
-  if (isRecategorized) score = Math.min(score, 94); // Cap re-categorized
-  if (isGap) score = Math.min(score, 72); // Cap gaps
-  return Math.min(score, 98);
-}
-
-function buildReasoning(
-  txn: RawTransaction,
-  sources: string[],
   policyCheck: NonNullable<RawTransaction["policy_check"]>,
   recat: RawTransaction["re_categorization"],
   gap: RawTransaction["gap_detection"],
-  isRecategorized: boolean,
-  isGap: boolean,
 ): string {
-  if (isRecategorized && recat) {
-    // Rich reasoning for the hero moment
+  if (txn.status === "re-categorized" && recat) {
     let text = recat.reason || `Re-categorized from ${recat.from} to ${recat.to}.`;
-    if (recat.evidence?.length) {
-      text += " Evidence: " + recat.evidence.join(". ") + ".";
-    }
-    if (policyCheck.applicable_rule) {
-      text += ` Policy: ${policyCheck.applicable_rule}.`;
-    }
+    if (recat.evidence?.length) text += " Evidence: " + recat.evidence.join(". ") + ".";
     return text;
   }
-
-  if (isGap && gap) {
-    return gap.reason || `Transport gap detected: ${gap.from_location} → ${gap.to_location}, ~${gap.estimated_distance_km}km. No matching card transaction found.`;
+  if (txn.status === "gap_detected" && gap) {
+    return gap.reason || `Transport gap: ${gap.from_location} → ${gap.to_location}.`;
   }
-
-  // Standard item reasoning
   if (policyCheck.applicable_rule) {
-    return `${policyCheck.applicable_rule}. Amount ₹${txn.amount?.toLocaleString("en-IN")} is ${policyCheck.within_limit ? "within" : "over"} the ₹${policyCheck.limit?.toLocaleString("en-IN")} limit.`;
+    return `${policyCheck.applicable_rule}. ₹${txn.amount?.toLocaleString("en-IN")} is ${policyCheck.within_limit ? "within" : "over"} the ₹${policyCheck.limit?.toLocaleString("en-IN")} limit.`;
   }
+  return `${txn.category || "Expense"} of ₹${txn.amount?.toLocaleString("en-IN")}.`;
+}
 
-  return `${txn.category} expense of ₹${txn.amount?.toLocaleString("en-IN")}. ${sources.length} sources confirmed.`;
+function extractJSON(text: string): string {
+  const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (match) return match[1].trim();
+  const jsonMatch = text.match(/(\{[\s\S]*\})/);
+  if (jsonMatch) return jsonMatch[1];
+  return text;
 }
