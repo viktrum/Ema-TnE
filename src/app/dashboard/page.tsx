@@ -6,10 +6,18 @@ import { createClient } from '@/lib/supabase/client';
 import { trpc } from '@/lib/trpc/client';
 import { useDashboardStore } from '@/stores/useDashboardStore';
 import { toast } from 'sonner';
-import { NorthStarBanner } from '@/components/dashboard/NorthStarBanner';
-import { ReportList } from '@/components/dashboard/ReportList';
-import { FlaggedPanel } from '@/components/dashboard/FlaggedPanel';
-import { StatsPanel } from '@/components/dashboard/StatsPanel';
+import {
+  CheckCircle,
+  XCircle,
+  MessageCircle,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  AlertTriangle,
+  Shield,
+  Inbox,
+  LogOut,
+} from 'lucide-react';
 
 const REJECT_REASONS = [
   'Policy Violation',
@@ -19,191 +27,109 @@ const REJECT_REASONS = [
   'Other',
 ] as const;
 
+const SEVERITY_STYLES: Record<string, string> = {
+  HIGH: 'bg-red-100 text-red-700 border-red-200',
+  MEDIUM: 'bg-amber-100 text-amber-700 border-amber-200',
+  LOW: 'bg-gray-100 text-gray-600 border-gray-200',
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
 
   const {
-    heroMetric,
     autoApproved,
     flagged,
-    health,
     expandedFlagId,
     activeModal,
     modalTargetId,
     isLoading,
     setAutoApproved,
     setFlagged,
-    setHealth,
     setExpandedFlagId,
     setActiveModal,
     setLoading,
     removeFlaggedItem,
   } = useDashboardStore();
 
-  // Modal form state
   const [rejectReason, setRejectReason] = useState<string>(REJECT_REASONS[0]);
   const [rejectNotes, setRejectNotes] = useState('');
   const [askQuestion, setAskQuestion] = useState('');
   const [isActionPending, setIsActionPending] = useState(false);
+  const [userName, setUserName] = useState('');
 
-  // tRPC queries
+  // tRPC
   const reportsQuery = trpc.dashboard.getReports.useQuery({});
-  const statsQuery = trpc.dashboard.getStats.useQuery();
-
-  // tRPC mutations
   const approveMutation = trpc.approval.approve.useMutation();
   const rejectMutation = trpc.approval.reject.useMutation();
   const askMutation = trpc.approval.askEmployee.useMutation();
 
-  // Auth check and initial data load
+  // Auth + role check
   useEffect(() => {
     let cancelled = false;
-
     async function init() {
       setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push('/login'); return; }
 
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-      if (authError || !user) {
-        toast.error('Please log in to continue.');
-        router.push('/login');
-        return;
-      }
-
-      // Verify role is manager/chro/admin
-      // Auth metadata may be empty (dashboard-created users) — check public.users
       let role = user.user_metadata?.role?.toLowerCase() || '';
       if (!role) {
-        const { data: dbUser } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .single();
+        const { data: dbUser } = await supabase.from('users').select('role, name').eq('id', user.id).single();
         role = dbUser?.role || '';
+        if (dbUser?.name) setUserName(dbUser.name);
+      } else {
+        setUserName(user.user_metadata?.name || user.email?.split('@')[0] || '');
       }
-      const allowedRoles = ['manager', 'chro', 'admin'];
-      if (!allowedRoles.includes(role)) {
+
+      if (!['manager', 'chro', 'admin'].includes(role)) {
         router.push('/chat');
         return;
       }
-
-      if (!cancelled) {
-        setLoading(false);
-      }
+      if (!cancelled) setLoading(false);
     }
-
     init();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync tRPC query data into Zustand store
+  // Sync data
   useEffect(() => {
-    if (reportsQuery.data) {
-      const { autoApproved: autoData, flagged: flaggedData } = reportsQuery.data;
+    if (!reportsQuery.data) return;
+    const { autoApproved: autoData, flagged: flaggedData } = reportsQuery.data;
+    const total = autoData.length + flaggedData.length;
 
-      setAutoApproved({
-        count: autoData.length,
-        percentage: autoData.length + flaggedData.length > 0
-          ? Math.round((autoData.length / (autoData.length + flaggedData.length)) * 100)
-          : 0,
-        reports: autoData.map((r: any) => ({
-          id: r.id,
-          traveler_name: r.traveler_name || 'Unknown',
-          traveler_role: r.traveler_role || '',
-          traveler_initials: r.traveler_initials || getInitials(r.traveler_name || 'U'),
-          destination: r.destination || '',
-          dates: r.dates || '',
-          total_amount: r.total_amount || 0,
-          currency: r.currency || 'INR',
-          item_count: r.item_count || 0,
-          avg_confidence: r.avg_confidence || 0,
-        })),
-      });
-
-      setFlagged({
-        count: flaggedData.length,
-        percentage: autoData.length + flaggedData.length > 0
-          ? Math.round((flaggedData.length / (autoData.length + flaggedData.length)) * 100)
-          : 0,
-        featuredId: flaggedData.length > 0 ? flaggedData[0].id : null,
-        items: flaggedData.map((r: any) => ({
-          id: r.id,
-          traveler_name: r.traveler_name || 'Unknown',
-          traveler_role: r.traveler_role || '',
-          traveler_initials: r.traveler_initials || getInitials(r.traveler_name || 'U'),
-          destination: r.destination || '',
-          dates: r.dates || '',
-          total_amount: r.total_amount || 0,
-          currency: r.currency || 'INR',
-          item_count: r.item_count || 0,
-          avg_confidence: r.avg_confidence || 0,
-          flag_reason: r.flag_reason || '',
-          flag_severity: r.flag_severity || 'MEDIUM',
-          items: r.items || [],
-          reasoning: r.reasoning || null,
-          sources: r.sources || [],
-          scenario_id: r.scenario_id || '',
-        })),
-      });
-
-      // Expand first flagged item by default (id=1, Tanya's dinner)
-      if (flaggedData.length > 0 && expandedFlagId === null) {
-        setExpandedFlagId(flaggedData[0].id);
-      }
-
-      setLoading(false);
+    setAutoApproved({
+      count: autoData.length,
+      percentage: total > 0 ? Math.round((autoData.length / total) * 100) : 0,
+      reports: autoData,
+    });
+    setFlagged({
+      count: flaggedData.length,
+      percentage: total > 0 ? Math.round((flaggedData.length / total) * 100) : 0,
+      featuredId: flaggedData[0]?.id ?? null,
+      items: flaggedData,
+    });
+    if (flaggedData.length > 0 && expandedFlagId === null) {
+      setExpandedFlagId(flaggedData[0].id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportsQuery.data]);
 
-  useEffect(() => {
-    if (statsQuery.data) {
-      const s = statsQuery.data;
-      setHealth({
-        stats: [
-          { label: 'Reports This Month', value: s.total },
-          { label: 'Auto-Approved Rate', value: `${s.autoApprovedRate}%`, change: '', trend: 'up' as const },
-          { label: 'Flagged Rate', value: `${s.flaggedRate}%`, change: '', trend: 'down' as const },
-          { label: 'Avg Confidence', value: `${s.avgConfidence}%`, change: '', trend: 'up' as const },
-        ],
-        flagTypes: health.flagTypes,
-        trend: health.trend,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statsQuery.data]);
-
-  // Supabase Realtime subscriptions
+  // Realtime
   useEffect(() => {
     const reportsChannel = supabase
       .channel('reports-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'reports' },
-        (payload) => {
-          toast.success(`New report submitted by ${payload.new.traveler_name}`);
-          reportsQuery.refetch();
-          statsQuery.refetch();
-        }
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, (payload) => {
+        toast.success(`New report from ${payload.new.traveler_name}`);
+        reportsQuery.refetch();
+      })
       .subscribe();
 
     const approvalsChannel = supabase
       .channel('approvals-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'approvals' },
-        () => {
-          toast.info('Action taken on report');
-          reportsQuery.refetch();
-          statsQuery.refetch();
-        }
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'approvals' }, () => {
+        reportsQuery.refetch();
+      })
       .subscribe();
 
     return () => {
@@ -213,20 +139,16 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Action handlers
+  // Actions
   const handleApprove = useCallback(async (id: number) => {
     setIsActionPending(true);
     try {
       await approveMutation.mutateAsync({ reportId: id });
-      toast.success('Report approved successfully.');
+      toast.success('Approved.');
       removeFlaggedItem(id);
       reportsQuery.refetch();
-      statsQuery.refetch();
-    } catch {
-      toast.error('Failed to approve report.');
-    } finally {
-      setIsActionPending(false);
-    }
+    } catch { toast.error('Failed to approve.'); }
+    finally { setIsActionPending(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -234,154 +156,213 @@ export default function DashboardPage() {
     if (!modalTargetId) return;
     setIsActionPending(true);
     try {
-      await rejectMutation.mutateAsync({
-        reportId: modalTargetId,
-        reason: rejectReason,
-        notes: rejectNotes || undefined,
-      });
-      toast.success('Report rejected.');
+      await rejectMutation.mutateAsync({ reportId: modalTargetId, reason: rejectReason, notes: rejectNotes || undefined });
+      toast.success('Rejected.');
       removeFlaggedItem(modalTargetId);
       setActiveModal(null);
       setRejectReason(REJECT_REASONS[0]);
       setRejectNotes('');
       reportsQuery.refetch();
-      statsQuery.refetch();
-    } catch {
-      toast.error('Failed to reject report.');
-    } finally {
-      setIsActionPending(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    } catch { toast.error('Failed to reject.'); }
+    finally { setIsActionPending(false); }
+    // eslint-disable-next-line react-hooks-exhaustive-deps
   }, [modalTargetId, rejectReason, rejectNotes]);
 
   const handleAsk = useCallback(async () => {
     if (!modalTargetId || !askQuestion.trim()) return;
     setIsActionPending(true);
     try {
-      await askMutation.mutateAsync({
-        reportId: modalTargetId,
-        question: askQuestion.trim(),
-      });
+      await askMutation.mutateAsync({ reportId: modalTargetId, question: askQuestion });
       toast.success('Question sent to employee.');
       setActiveModal(null);
       setAskQuestion('');
-    } catch {
-      toast.error('Failed to send question.');
-    } finally {
-      setIsActionPending(false);
-    }
+    } catch { toast.error('Failed to send question.'); }
+    finally { setIsActionPending(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalTargetId, askQuestion]);
 
-  const openRejectModal = useCallback((id: number) => {
-    setRejectReason(REJECT_REASONS[0]);
-    setRejectNotes('');
-    setActiveModal('reject', id);
+  const handleLogout = useCallback(async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const openAskModal = useCallback((id: number) => {
-    setAskQuestion('Can you provide additional documentation for this expense?');
-    setActiveModal('ask', id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const closeModal = useCallback(() => {
-    setActiveModal(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Loading state
-  if (isLoading || reportsQuery.isLoading) {
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-[#1F8844]" />
-          <p className="text-sm text-gray-500">Loading dashboard...</p>
-        </div>
+        <div className="text-sm text-gray-500">Loading...</div>
       </div>
     );
   }
 
+  const flaggedItems = flagged.items || [];
+  const pendingCount = flaggedItems.length;
+
   return (
-    <div className="flex h-screen flex-col bg-gray-50">
-      {/* Top nav */}
-      <nav className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
-        <div className="flex items-center gap-4">
+    <div className="flex h-screen flex-col bg-[#F9FAFB]">
+      {/* Top bar */}
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1F8844] text-xs font-bold text-white">E</div>
           <span className="text-sm font-semibold text-gray-800">Ema T&E</span>
           <span className="text-xs text-gray-400">|</span>
-          <span className="text-sm font-medium text-[#1F8844]">Dashboard</span>
+          <span className="text-sm text-gray-500">Manager Review</span>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/chat')}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
-          >
+        <div className="flex items-center gap-4">
+          <button onClick={() => router.push('/chat')} className="text-xs text-gray-500 hover:text-[#1F8844]">
             Switch to Chat
           </button>
+          <span className="text-xs text-gray-400">{userName}</span>
+          <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600">
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
-      </nav>
+      </header>
 
-      {/* North Star Banner */}
-      <div className="shrink-0 p-4 pb-0">
-        <NorthStarBanner
-          value={heroMetric.value}
-          label={heroMetric.label}
-          industryAvg={heroMetric.industryAvg}
-        />
+      {/* Stats bar — compact, not a hero */}
+      <div className="border-b border-gray-100 bg-white px-6 py-3">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <Inbox className="h-4 w-4 text-amber-500" />
+            <span className="text-sm font-semibold text-gray-800">{pendingCount} items need your review</span>
+          </div>
+          <div className="h-4 w-px bg-gray-200" />
+          <div className="flex items-center gap-4 text-xs text-gray-500">
+            <span>{autoApproved.count} auto-approved ({autoApproved.percentage}%)</span>
+            <span>·</span>
+            <span>{autoApproved.count + pendingCount} total this month</span>
+          </div>
+        </div>
       </div>
 
-      {/* 3-panel grid */}
-      <div className="flex-1 grid grid-cols-[30%_40%_30%] gap-4 overflow-hidden p-4">
-        {/* Left: Auto-approved reports */}
-        <div className="overflow-y-auto rounded-xl border border-gray-200 bg-white">
-          <div className="sticky top-0 z-10 border-b border-gray-100 bg-white px-4 py-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-800">Auto-Approved</h2>
-              <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                {autoApproved.count} ({autoApproved.percentage}%)
-              </span>
+      {/* Inbox */}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="mx-auto max-w-3xl space-y-3">
+          {flaggedItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+              <CheckCircle className="mb-3 h-10 w-10 text-green-400" />
+              <p className="text-sm font-medium">All clear. No items need your review.</p>
             </div>
-          </div>
-          <div className="p-3">
-            <ReportList reports={autoApproved.reports} count={autoApproved.count} percentage={autoApproved.percentage} />
-          </div>
-        </div>
+          ) : (
+            flaggedItems.map((item) => {
+              const isExpanded = expandedFlagId === item.id;
+              const severity = (item as { flag_severity?: string }).flag_severity || 'MEDIUM';
+              const reasoning = typeof (item as { reasoning?: unknown }).reasoning === 'object' && (item as { reasoning?: { summary?: string } }).reasoning
+                ? ((item as { reasoning?: { summary?: string } }).reasoning?.summary || '')
+                : String((item as { reasoning?: unknown }).reasoning || '');
+              const sources: string[] = (item as { sources?: string[] }).sources || [];
 
-        {/* Center: Flagged items */}
-        <div className="overflow-y-auto rounded-xl border border-gray-200 bg-white">
-          <div className="sticky top-0 z-10 border-b border-gray-100 bg-white px-4 py-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-800">Flagged for Review</h2>
-              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-                {flagged.count} ({flagged.percentage}%)
-              </span>
-            </div>
-          </div>
-          <div className="p-3">
-            <FlaggedPanel
-              items={flagged.items}
-              expandedId={expandedFlagId}
-              onToggle={(id) => setExpandedFlagId(expandedFlagId === id ? null : id)}
-              onApprove={handleApprove}
-              onReject={openRejectModal}
-              onAsk={openAskModal}
-            />
-          </div>
-        </div>
+              return (
+                <div
+                  key={item.id}
+                  className={`rounded-xl border bg-white transition-shadow ${
+                    isExpanded ? 'shadow-md border-gray-300' : 'shadow-sm border-gray-200 hover:shadow-md'
+                  }`}
+                >
+                  {/* Collapsed header — always visible */}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedFlagId(isExpanded ? null : item.id)}
+                    className="flex w-full items-center gap-4 px-5 py-4 text-left"
+                  >
+                    {/* Severity indicator */}
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                      severity === 'HIGH' ? 'bg-red-100' : severity === 'MEDIUM' ? 'bg-amber-100' : 'bg-gray-100'
+                    }`}>
+                      <AlertTriangle className={`h-4 w-4 ${
+                        severity === 'HIGH' ? 'text-red-600' : severity === 'MEDIUM' ? 'text-amber-600' : 'text-gray-500'
+                      }`} />
+                    </div>
 
-        {/* Right: CHRO Health / Stats */}
-        <div className="overflow-y-auto rounded-xl border border-gray-200 bg-white">
-          <div className="sticky top-0 z-10 border-b border-gray-100 bg-white px-4 py-3">
-            <h2 className="text-sm font-semibold text-gray-800">CHRO Health</h2>
-          </div>
-          <div className="p-3">
-            <StatsPanel
-              stats={health.stats}
-              flagTypes={health.flagTypes}
-              trend={health.trend}
-            />
-          </div>
+                    {/* Item info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-gray-800 truncate">
+                          {item.traveler_name}
+                        </span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${SEVERITY_STYLES[severity]}`}>
+                          {severity}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-gray-500 truncate">
+                        {item.flag_reason || `${item.destination} · ₹${item.total_amount?.toLocaleString('en-IN')}`}
+                      </p>
+                    </div>
+
+                    {/* Amount + expand icon */}
+                    <span className="shrink-0 text-sm font-mono font-semibold text-gray-700">
+                      ₹{item.total_amount?.toLocaleString('en-IN')}
+                    </span>
+                    {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                  </button>
+
+                  {/* Expanded detail */}
+                  {isExpanded && (
+                    <div className="border-t border-gray-100 px-5 pb-4 pt-3">
+                      {/* Context row */}
+                      <div className="mb-3 flex items-center gap-3 text-xs text-gray-500">
+                        <span>{item.destination}</span>
+                        <span>·</span>
+                        <span>{item.dates}</span>
+                        <span>·</span>
+                        <span>{item.avg_confidence}% confidence</span>
+                      </div>
+
+                      {/* AI Reasoning */}
+                      {reasoning && (
+                        <div className="mb-4 rounded-lg bg-gray-50 p-3">
+                          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                            <Shield className="h-3 w-3" />
+                            AI Reasoning
+                          </div>
+                          <p className="text-[13px] leading-relaxed text-gray-700">{reasoning}</p>
+                        </div>
+                      )}
+
+                      {/* Source badges */}
+                      {sources.length > 0 && (
+                        <div className="mb-4 flex flex-wrap gap-1.5">
+                          {sources.map((source) => (
+                            <span key={source} className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                              {source}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleApprove(item.id)}
+                          disabled={isActionPending}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-[#1F8844] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#176B36] disabled:opacity-50"
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" /> Approve
+                        </button>
+                        <button
+                          onClick={() => { setActiveModal('reject', item.id); }}
+                          disabled={isActionPending}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-4 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                        >
+                          <XCircle className="h-3.5 w-3.5" /> Reject
+                        </button>
+                        <button
+                          onClick={() => {
+                            setAskQuestion(`Can you provide additional context for this expense? (${item.flag_reason || 'flagged for review'})`);
+                            setActiveModal('ask', item.id);
+                          }}
+                          disabled={isActionPending}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" /> Ask Employee
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -389,51 +370,35 @@ export default function DashboardPage() {
       {activeModal === 'reject' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900">Reject Report</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Provide a reason for rejecting this expense report.
-            </p>
-
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Reason</label>
-                <select
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-[#1F8844] focus:outline-none focus:ring-1 focus:ring-[#1F8844]"
-                >
-                  {REJECT_REASONS.map((reason) => (
-                    <option key={reason} value={reason}>
-                      {reason}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Notes (optional)</label>
-                <textarea
-                  value={rejectNotes}
-                  onChange={(e) => setRejectNotes(e.target.value)}
-                  placeholder="Additional details..."
-                  rows={3}
-                  className="mt-1 w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#1F8844] focus:outline-none focus:ring-1 focus:ring-[#1F8844]"
-                />
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center justify-end gap-3">
-              <button
-                onClick={closeModal}
-                disabled={isActionPending}
-                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
+            <h3 className="mb-4 text-sm font-semibold text-gray-800">Reject Expense</h3>
+            <div className="mb-3">
+              <label className="mb-1 block text-xs font-medium text-gray-600">Reason</label>
+              <select
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-[#1F8844] focus:outline-none focus:ring-1 focus:ring-[#1F8844]"
               >
+                {REJECT_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="mb-4">
+              <label className="mb-1 block text-xs font-medium text-gray-600">Notes (optional)</label>
+              <textarea
+                value={rejectNotes}
+                onChange={(e) => setRejectNotes(e.target.value)}
+                rows={3}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-[#1F8844] focus:outline-none focus:ring-1 focus:ring-[#1F8844]"
+                placeholder="Add context for the employee..."
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setActiveModal(null)} className="rounded-lg px-4 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50">
                 Cancel
               </button>
               <button
                 onClick={handleReject}
                 disabled={isActionPending}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {isActionPending ? 'Rejecting...' : 'Confirm Reject'}
               </button>
@@ -446,35 +411,26 @@ export default function DashboardPage() {
       {activeModal === 'ask' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900">Ask Employee</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Send a question to the employee about this expense.
-            </p>
-
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700">Question</label>
+            <h3 className="mb-4 text-sm font-semibold text-gray-800">Ask Employee</h3>
+            <div className="mb-4">
+              <label className="mb-1 block text-xs font-medium text-gray-600">Your question</label>
               <textarea
                 value={askQuestion}
                 onChange={(e) => setAskQuestion(e.target.value)}
                 rows={4}
-                className="mt-1 w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#1F8844] focus:outline-none focus:ring-1 focus:ring-[#1F8844]"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-[#1F8844] focus:outline-none focus:ring-1 focus:ring-[#1F8844]"
               />
             </div>
-
-            <div className="mt-6 flex items-center justify-end gap-3">
-              <button
-                onClick={closeModal}
-                disabled={isActionPending}
-                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
-              >
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setActiveModal(null)} className="rounded-lg px-4 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50">
                 Cancel
               </button>
               <button
                 onClick={handleAsk}
                 disabled={isActionPending || !askQuestion.trim()}
-                className="rounded-lg bg-[#1F8844] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#186d36] disabled:opacity-50"
+                className="rounded-lg bg-[#1F8844] px-4 py-2 text-xs font-medium text-white hover:bg-[#176B36] disabled:opacity-50"
               >
-                {isActionPending ? 'Sending...' : 'Send'}
+                {isActionPending ? 'Sending...' : 'Send Question'}
               </button>
             </div>
           </div>
@@ -482,16 +438,4 @@ export default function DashboardPage() {
       )}
     </div>
   );
-}
-
-// --- Helpers ---
-
-function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
 }

@@ -40,6 +40,12 @@ Phases:
 - Duplicate reasoning blocks (flagged + re-categorized) — consolidated to single block
 - Duplicate Vendor column removed, proper policy_status matching
 
+**P2 — Role-Based Dashboard Views (Future):**
+- Mihir (manager): inbox view — done now ✅
+- Chitra (CHRO): org-wide dashboard — hero metric "4 hours", 81% auto-approved, compliance trends, flag type distribution
+- Admin: full system view — all reports, metrics, audit trail
+- Switch view based on user role from public.users table
+
 **P2 — Data-as-Config (Future):**
 - Drop a new JSON file → engine processes it → new scenario works without code changes
 - Scenario files in `scenarios/` directory with traveler, transactions, context
