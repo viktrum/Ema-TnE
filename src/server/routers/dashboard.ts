@@ -6,13 +6,13 @@ export const dashboardRouter = router({
     .input(z.object({ scenarioId: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       // Fetch all dashboard_reports
-      const query = ctx.supabase
+      let query = ctx.supabase
         .from("dashboard_reports")
         .select("*")
         .order("created_at", { ascending: false });
 
       if (input.scenarioId) {
-        query.eq("scenario_id", input.scenarioId);
+        query = query.eq("scenario_id", input.scenarioId);
       }
 
       const { data, error } = await query;

@@ -10,7 +10,7 @@ export const approvalRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      // Insert approval record
+      // Insert approval record (report_id is TEXT — shared by chat and dashboard flows)
       const { error } = await ctx.supabase.from("approvals").insert({
         report_id: String(input.reportId),
         item_id: input.itemId || null,
@@ -59,6 +59,12 @@ export const approvalRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to reject" });
       }
 
+      // Update dashboard_reports status to rejected
+      await ctx.supabase
+        .from("dashboard_reports")
+        .update({ status: "rejected" })
+        .eq("id", input.reportId);
+
       await ctx.supabase.from("audit_log").insert({
         event_type: "reject",
         user_id: ctx.user.id,
@@ -85,6 +91,12 @@ export const approvalRouter = router({
       if (error) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to send question" });
       }
+
+      // Update dashboard_reports status to pending_info
+      await ctx.supabase
+        .from("dashboard_reports")
+        .update({ status: "pending_info" })
+        .eq("id", input.reportId);
 
       await ctx.supabase.from("audit_log").insert({
         event_type: "ask_employee",
