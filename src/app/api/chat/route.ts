@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { streamLLM, isLLMAvailable } from "@/lib/llm/client";
 import { buildChatMessages } from "@/lib/llm/prompts/chat";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -15,6 +16,10 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { message, scenarioId, report, history } = body;
+
+  if (!message || !scenarioId) {
+    return new Response("Missing required fields: message, scenarioId", { status: 400 });
+  }
 
   // Save user message to chat_messages
   await supabase.from("chat_messages").insert({
@@ -104,19 +109,17 @@ export async function POST(req: NextRequest) {
 
 // Fallback handler with fake streaming
 async function handleFallback(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
+  supabase: SupabaseClient,
   message: string,
   scenarioId: string,
   historyLength: number,
-  userId: string
+  userId: string,
 ) {
-  // Match fallback
   const fallbackKey = matchFallback(message, historyLength);
   const fallbackId = fallbackKey ? `${scenarioId}/${fallbackKey}` : null;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let fallbackData: any;
+  let fallbackData: Record<string, any> | null = null;
   if (fallbackId) {
     const { data } = await supabase
       .from("fallbacks")
@@ -189,7 +192,7 @@ function matchFallback(msg: string, historyLength: number): string | null {
   const m = msg.toLowerCase().trim();
 
   if (
-    m.match(/\b(1[,.]?1[0o]{2}|taxi|cab|uber|ola|ride)\b/) &&
+    m.match(/\b(1[,.]?100|taxi|cab|uber|ola|ride)\b/) &&
     m.match(/\b(actual|correct|was|change|update|yes|yeah|yep|no receipt)\b/i)
   ) {
     return "chat-confirm-taxi";

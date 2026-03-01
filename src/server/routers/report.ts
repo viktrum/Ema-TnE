@@ -5,6 +5,7 @@ import { isLLMAvailable } from "@/lib/llm/client";
 import { generateStructured } from "@/lib/llm/structured-output";
 import { buildAssemblyMessages } from "@/lib/llm/prompts/assembly";
 import { AssemblyOutputSchema } from "@/server/schemas/assembly";
+import type { AssemblyOutput } from "@/server/schemas/assembly";
 
 export const reportRouter = router({
   assemble: protectedProcedure
@@ -44,7 +45,7 @@ export const reportRouter = router({
       const useFallback =
         process.env.FALLBACK_MODE === "true" || !isLLMAvailable();
 
-      let assemblyOutput;
+      let assemblyOutput: AssemblyOutput;
 
       if (useFallback) {
         // Fetch from fallbacks table
@@ -64,29 +65,40 @@ export const reportRouter = router({
 
         assemblyOutput = AssemblyOutputSchema.parse(fallback.response);
       } else {
-        // Live LLM call
-        const messages = buildAssemblyMessages(scenario.data, policy.data);
+        // Pass scenario and policy directly — prompt builder handles flexible shapes
+        const messages = buildAssemblyMessages(scenario, policy);
         assemblyOutput = await generateStructured(
           messages,
-          AssemblyOutputSchema
+          AssemblyOutputSchema,
+          { timeout: 8000, maxTokens: 4096 },
         );
       }
 
       const latencyMs = Date.now() - startTime;
+      const report = assemblyOutput.report;
 
-      // Save report
-      const { data: report, error: reportError } = await ctx.supabase
+      // Save report to reports table with correct column names
+      const reportId = report.id || `RPT-${Date.now()}`;
+      const { error: reportError } = await ctx.supabase
         .from("reports")
         .upsert(
           {
+            id: reportId,
             scenario_id: input.scenarioId,
             user_id: ctx.user.id,
-            data: assemblyOutput,
+            traveler_name: report.traveler,
+            trip_summary: report.trip_summary,
+            total_amount: report.total_amount,
+            currency: report.currency,
+            cost_center: report.cost_center,
+            approver_name: report.approver,
+            items: report.items,
+            flagged_items: report.flagged_items,
+            missing_items: report.missing_items,
+            summary: report.summary,
             status: "draft",
-            fallback_used: useFallback,
-            created_at: new Date().toISOString(),
           },
-          { onConflict: "scenario_id,user_id" }
+          { onConflict: "id" },
         )
         .select()
         .single();
@@ -98,27 +110,29 @@ export const reportRouter = router({
         });
       }
 
-      // Log to audit_log
+      // Log to audit_log (correct column names: event_type, details)
       await ctx.supabase.from("audit_log").insert({
+        event_type: "assembly",
         user_id: ctx.user.id,
-        action: "report_assembled",
-        entity_type: "report",
-        entity_id: report.id,
-        metadata: {
-          scenario_id: input.scenarioId,
+        report_id: reportId,
+        scenario_id: input.scenarioId,
+        details: {
           fallback_used: useFallback,
           latency_ms: latencyMs,
+          total_amount: report.total_amount,
+          item_count: report.items.length,
         },
       });
 
-      // Log to ai_metrics
+      // Log to ai_metrics (correct column names: prompt_type, model)
       await ctx.supabase.from("ai_metrics").insert({
-        user_id: ctx.user.id,
-        operation: "assembly",
-        scenario_id: input.scenarioId,
+        prompt_type: "assembly",
+        model: useFallback ? "fallback" : "claude-sonnet-4-20250514",
         latency_ms: latencyMs,
+        tokens_in: 0,
+        tokens_out: 0,
+        confidence: report.summary.overall_confidence,
         fallback_used: useFallback,
-        model: useFallback ? null : "claude-sonnet-4-20250514",
       });
 
       return assemblyOutput;
@@ -132,6 +146,8 @@ export const reportRouter = router({
         .select("*")
         .eq("scenario_id", input.scenarioId)
         .eq("user_id", ctx.user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .single();
 
       if (error) return null;
@@ -143,7 +159,10 @@ export const reportRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
         .from("reports")
-        .update({ status: "submitted", submitted_at: new Date().toISOString() })
+        .update({
+          status: "submitted",
+          submitted_at: new Date().toISOString(),
+        })
         .eq("id", input.reportId)
         .eq("user_id", ctx.user.id)
         .select()
@@ -158,10 +177,10 @@ export const reportRouter = router({
 
       // Log to audit_log
       await ctx.supabase.from("audit_log").insert({
+        event_type: "submit",
         user_id: ctx.user.id,
-        action: "report_submitted",
-        entity_type: "report",
-        entity_id: input.reportId,
+        report_id: input.reportId,
+        details: {},
       });
 
       return data;

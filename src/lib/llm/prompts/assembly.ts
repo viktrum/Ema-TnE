@@ -1,66 +1,10 @@
-import type { LLMMessage } from '@/lib/llm/types';
+import type { LLMMessage } from "@/lib/llm/types";
 
-export interface ScenarioData {
-  traveler: {
-    name: string;
-    employee_id: string;
-    department: string;
-    cost_center: string;
-    approver: string;
-  };
-  trip: {
-    purpose: string;
-    dates: { start: string; end: string };
-    destinations: string[];
-  };
-  transactions: Array<{
-    id: string;
-    date: string;
-    vendor: string;
-    amount: number;
-    currency: string;
-    description: string;
-    card_last_four?: string;
-  }>;
-  context: {
-    calendar_events?: Array<{
-      date: string;
-      title: string;
-      attendees?: string[];
-      location?: string;
-    }>;
-    crm_records?: Array<{
-      deal_id: string;
-      company: string;
-      contact: string;
-      stage: string;
-      value?: string;
-    }>;
-    email_confirmations?: Array<{
-      subject: string;
-      date: string;
-      vendor?: string;
-      amount?: number;
-      confirmation_number?: string;
-    }>;
-    hrms_profile?: {
-      grade: string;
-      travel_tier: string;
-      home_city: string;
-    };
-  };
-}
-
-export interface PolicyData {
-  categories: Array<{
-    name: string;
-    limit: number;
-    currency: string;
-    receipt_threshold: number;
-    rules: string[];
-  }>;
-  general_rules: string[];
-}
+// Flexible types matching the Supabase JSONB schema
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ScenarioData = Record<string, any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type PolicyData = Record<string, any>;
 
 const ASSEMBLY_SYSTEM_PROMPT = `You are the T&E AI Employee for NexGen Industries, powered by Ema's Generative Workflow Engine.
 
@@ -95,48 +39,77 @@ INSTRUCTIONS:
 
 export function buildAssemblyMessages(
   scenario: ScenarioData,
-  policy: PolicyData
+  policy: PolicyData,
 ): LLMMessage[] {
+  const context = scenario.context || {};
+
   const userPrompt = `TRAVELER PROFILE:
-Name: ${scenario.traveler.name}
-Employee ID: ${scenario.traveler.employee_id}
-Department: ${scenario.traveler.department}
-Cost Center: ${scenario.traveler.cost_center}
-Approver: ${scenario.traveler.approver}
+${JSON.stringify(
+  {
+    name: scenario.traveler?.name || scenario.name,
+    employee_id: scenario.traveler?.employee_id,
+    role: scenario.traveler?.role,
+    department: scenario.traveler?.department,
+    business_unit: scenario.traveler?.business_unit,
+    cost_center: scenario.traveler?.cost_center,
+    approver: scenario.traveler?.approver,
+  },
+  null,
+  2,
+)}
 
 TRIP DETAILS:
-Purpose: ${scenario.trip.purpose}
-Dates: ${scenario.trip.dates.start} to ${scenario.trip.dates.end}
-Destinations: ${scenario.trip.destinations.join(', ')}
+Destination: ${scenario.destination || scenario.trip?.destination}
+Dates: ${scenario.start_date || scenario.trip?.start_date} to ${scenario.end_date || scenario.trip?.end_date}
+Type: ${scenario.trip_type || scenario.trip?.type}
+Purpose: ${scenario.purpose || scenario.trip?.purpose}
 
 CORPORATE CARD TRANSACTIONS:
-${JSON.stringify(scenario.transactions, null, 2)}
+${JSON.stringify(scenario.transactions || [], null, 2)}
 
 CONTEXT FROM ENTERPRISE SYSTEMS:
 
 Calendar Events:
-${scenario.context.calendar_events ? JSON.stringify(scenario.context.calendar_events, null, 2) : 'No calendar data available'}
+${JSON.stringify(context.calendar || context.calendar_events || [], null, 2)}
 
 CRM Records:
-${scenario.context.crm_records ? JSON.stringify(scenario.context.crm_records, null, 2) : 'No CRM data available'}
+${JSON.stringify(context.crm || context.crm_records || [], null, 2)}
 
 Email Confirmations:
-${scenario.context.email_confirmations ? JSON.stringify(scenario.context.email_confirmations, null, 2) : 'No email confirmations available'}
+${JSON.stringify(context.email || context.email_confirmations || [], null, 2)}
 
 HRMS Profile:
-${scenario.context.hrms_profile ? JSON.stringify(scenario.context.hrms_profile, null, 2) : 'No HRMS data available'}
+${JSON.stringify(context.hrms || context.hrms_profile || {}, null, 2)}
+
+Pre-Approval:
+${JSON.stringify(context.pre_approval || {}, null, 2)}
 
 COMPANY T&E POLICY:
-Categories and Limits:
-${JSON.stringify(policy.categories, null, 2)}
+Domestic Rules:
+${JSON.stringify(policy.domestic || {}, null, 2)}
 
-General Rules:
-${policy.general_rules.map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
+International Rules:
+${JSON.stringify(policy.international || {}, null, 2)}
 
-Assemble the complete expense report. Return valid JSON matching the AssemblyOutput schema.`;
+Assemble the complete expense report. Return valid JSON matching the AssemblyOutput schema with this structure:
+{
+  "report": {
+    "id": "RPT-...",
+    "traveler": "Name",
+    "trip_summary": "Destination, Dates — Purpose",
+    "total_amount": number,
+    "currency": "INR",
+    "cost_center": "...",
+    "approver": "...",
+    "items": [{ "id", "description", "vendor", "date", "amount", "currency", "category", "original_category", "confidence", "sources", "reasoning", "policy_status", "flag_reason", "recommendation" }],
+    "flagged_items": [...],
+    "missing_items": [{ "id", "detected_gap", "estimated_amount", "currency", "evidence", "confidence", "action_needed" }],
+    "summary": { "total_items", "auto_approve_count", "review_count", "missing_count", "total_amount", "overall_confidence" }
+  }
+}`;
 
   return [
-    { role: 'system', content: ASSEMBLY_SYSTEM_PROMPT },
-    { role: 'user', content: userPrompt },
+    { role: "system", content: ASSEMBLY_SYSTEM_PROMPT },
+    { role: "user", content: userPrompt },
   ];
 }

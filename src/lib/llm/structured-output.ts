@@ -9,11 +9,16 @@ export async function generateStructured<T>(
 ): Promise<T> {
   const response = await generateLLM(messages, config);
 
-  // Extract JSON from response (may be wrapped in ```json blocks)
-  const jsonStr = extractJSON(response.content);
-  const parsed = JSON.parse(jsonStr);
-  const validated = schema.parse(parsed);
-  return validated;
+  try {
+    const jsonStr = extractJSON(response.content);
+    const parsed = JSON.parse(jsonStr);
+    const validated = schema.parse(parsed);
+    return validated;
+  } catch (err) {
+    throw new Error(
+      `LLM returned invalid structured output: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 }
 
 function extractJSON(text: string): string {

@@ -88,6 +88,6 @@ function delay(ms: number): Promise<void> {
 export function isLLMAvailable(): boolean {
   const llmProvider = process.env.LLM_PROVIDER || 'claude';
   if (llmProvider === 'claude') return !!process.env.ANTHROPIC_API_KEY;
-  if (llmProvider === 'openai') return !!process.env.OPENAI_API_KEY;
+  // OpenAI provider not yet implemented — return false
   return false;
 }
