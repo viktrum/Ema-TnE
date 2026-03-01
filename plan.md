@@ -73,6 +73,24 @@ Phases:
 **Code review:** Internal found critical role check bug (fixed). CodeRabbit CLI found 1 cosmetic issue.
 **Status:** NOT MERGED — waiting for Phase 2 deep research results before merging
 
+---
+
+## 2026-03-01 22:45 IST — Phase 3 Dashboard Redesigned
+**Branch:** feature/phase-3-dashboard
+**PR:** #3 (https://github.com/viktrum/Ema-TnE/pull/3)
+**Change:** Replaced 3-panel dashboard with manager inbox view. "4 hours" hero metric moved to future CHRO view. Manager sees: compact stats bar + flagged items inbox with expand/collapse + action buttons.
+**Status:** NOT MERGED — waiting for: (1) deep research results, (2) manual testing, (3) possible further changes
+
+---
+
+## Current State (End of Session 1)
+- Phase 1: ✅ Merged to develop (PR #1)
+- Phase 2: ✅ Merged to develop (PR #2) — but chat hero needs redesign based on research
+- Phase 3: ⏸️ PR #3 open, inbox view built, NOT merged
+- Phase 4-6: Not started
+- Deep research: Running in 4 tools (Perplexity, Gemini, Claude, ChatGPT) — results pending
+- CodeRabbit/Greptile GitHub Apps: NOT installed
+
 **Deferred to Phase 5 (Polish):**
 - Chat message UI/UX redesign — current messages are functional but not polished
 - Use `frontend-design` skill for pixel-perfect chat bubble layout
