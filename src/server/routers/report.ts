@@ -1,11 +1,8 @@
 import { z } from "zod/v4";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "@/server/trpc/init";
-import { isLLMAvailable } from "@/lib/llm/client";
-import { generateStructured } from "@/lib/llm/structured-output";
-import { buildAssemblyMessages } from "@/lib/llm/prompts/assembly";
-import { AssemblyOutputSchema } from "@/server/schemas/assembly";
-import type { AssemblyOutput } from "@/server/schemas/assembly";
+import { assembleReport } from "@/lib/engine/assembler";
+import type { RawScenario, RawPolicy } from "@/lib/engine/types";
 
 export const reportRouter = router({
   assemble: protectedProcedure
@@ -41,15 +38,11 @@ export const reportRouter = router({
         });
       }
 
-      // Check fallback mode
-      const useFallback =
-        process.env.FALLBACK_MODE === "true" || !isLLMAvailable();
+      // Check if scenario has embedded items (seed data) or needs fallback fetch
+      let scenarioData: RawScenario = scenario as unknown as RawScenario;
 
-      let assemblyOutput: AssemblyOutput;
-      let didFallback = useFallback;
-
-      if (useFallback) {
-        // Fetch from fallbacks table
+      if (!scenarioData.items || (scenarioData.items as unknown[]).length === 0) {
+        // Scenario doesn't have embedded items — check fallbacks table
         const { data: fallback } = await ctx.supabase
           .from("fallbacks")
           .select("*")
@@ -57,204 +50,18 @@ export const reportRouter = router({
           .eq("scenario_id", input.scenarioId)
           .single();
 
-        if (!fallback?.response) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "No fallback data available for this scenario",
-          });
-        }
-
-        // Transform fallback data to match AssemblyOutputSchema
-        const raw = fallback.response;
-        if (raw.report) {
-          assemblyOutput = AssemblyOutputSchema.parse(raw);
-        } else {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const items = (raw.items || []).map((item: any, i: number) => {
-            const isRecategorized = item.status === "re-categorized" && item.re_categorization;
-            const isGap = item.status === "gap_detected";
-            const policyCheck = item.policy_check || {};
-            const recat = item.re_categorization || {};
-            const gap = item.gap_detection || {};
-
-            // Build reasoning string from available data
-            let reasoning = "";
-            if (isRecategorized) {
-              reasoning = recat.reason || "";
-              if (recat.evidence?.length) {
-                reasoning += " Evidence: " + recat.evidence.join(". ") + ".";
-              }
-            } else if (isGap) {
-              reasoning = gap.reason || `Gap detected: ${item.description}`;
-            } else if (policyCheck.applicable_rule) {
-              reasoning = `${policyCheck.applicable_rule}. Amount ₹${item.amount} is ${policyCheck.within_limit ? "within" : "over"} the ₹${policyCheck.limit} limit.`;
-            }
-
-            return {
-              id: item.id || `EXP-${String(i + 1).padStart(3, "0")}`,
-              description: (item.description || "").replace(/ — .*$/, ""),
-              vendor: (item.description || "").replace(/ — .*$/, ""),
-              date: item.date || "",
-              amount: item.amount || 0,
-              currency: item.currency || "INR",
-              category: item.category || "Miscellaneous",
-              original_category: isRecategorized ? (recat.from || null) : null,
-              confidence: item.confidence || 0,
-              sources: item.sources || [],
-              reasoning,
-              policy_status: isRecategorized ? "within_policy_after_recategorization"
-                : isGap ? "pending_review"
-                : policyCheck.within_limit ? "within_policy"
-                : "exceeds_policy",
-              flag_reason: isRecategorized
-                ? `Re-categorized from ${recat.from} to ${recat.to}. ${policyCheck.applicable_rule || ""}`
-                : isGap ? "Gap detected — needs employee confirmation"
-                : null,
-              recommendation: isRecategorized ? "approve_with_review"
-                : isGap ? "request_employee_input"
-                : item.status === "compliant" ? "auto_approve"
-                : "flag_for_review",
-            };
-          });
-
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const flaggedItems = items.filter((item: any) =>
-            item.recommendation === "approve_with_review" || item.recommendation === "flag_for_review"
-          );
-
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const missingItems = (raw.items || [])
-            .filter((item: any) => item.status === "gap_detected")
-            .map((item: any) => {
-              const gap = item.gap_detection || {};
-              return {
-                id: item.id || "EXP-GAP",
-                detected_gap: gap.reason || `Transport from ${gap.from_location || "?"} to ${gap.to_location || "?"}`,
-                estimated_amount: item.amount || 0,
-                currency: item.currency || "INR",
-                evidence: `${gap.from_location || ""} → ${gap.to_location || ""}, ~${gap.estimated_distance_km || "?"}km. ${gap.reason || ""}`,
-                confidence: item.confidence || 67,
-                action_needed: gap.needs_confirmation ? "Confirm amount and provide receipt if available" : "Review",
-              };
-            });
-
-          const summary = raw.summary || {};
-          assemblyOutput = {
-            report: {
-              id: raw.trip_id || `RPT-${Date.now()}`,
-              traveler: raw.traveler?.name || "Unknown",
-              trip_summary: `${raw.trip?.destination || ""}, ${raw.trip?.dates || ""} — ${raw.trip?.purpose || ""}`,
-              total_amount: summary.total_amount || 0,
-              currency: summary.currency || "INR",
-              cost_center: raw.traveler?.cost_center || "",
-              approver: raw.traveler?.approver || "",
-              items,
-              flagged_items: flaggedItems,
-              missing_items: missingItems,
-              summary: {
-                total_items: items.length,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                auto_approve_count: items.filter((i: any) => i.recommendation === "auto_approve").length,
-                review_count: flaggedItems.length,
-                missing_count: missingItems.length,
-                total_amount: summary.total_amount || 0,
-                overall_confidence: summary.avg_confidence || 90,
-              },
-            },
-          };
-        }
-      } else {
-        // Live LLM call with auto-fallback on failure
-        try {
-          const messages = buildAssemblyMessages(scenario, policy);
-          assemblyOutput = await generateStructured(
-            messages,
-            AssemblyOutputSchema,
-            { timeout: 30000, maxTokens: 4096 },
-          );
-        } catch (llmError) {
-          console.error("LLM assembly failed, falling back:", llmError);
-          didFallback = true;
-          // Auto-fallback: fetch pre-computed response
-          const { data: fallback } = await ctx.supabase
-            .from("fallbacks")
-            .select("*")
-            .eq("type", "assembly")
-            .eq("scenario_id", input.scenarioId)
-            .single();
-
-          if (!fallback?.response) {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message: "LLM failed and no fallback available",
-            });
-          }
-
-          // Same transformation as above
-          const raw = fallback.response;
-          if (raw.report) {
-            assemblyOutput = AssemblyOutputSchema.parse(raw);
-          } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const items = (raw.items || []).map((item: any, i: number) => {
-              const isRecategorized = item.status === "re-categorized" && item.re_categorization;
-              const isGap = item.status === "gap_detected";
-              const policyCheck = item.policy_check || {};
-              const recat = item.re_categorization || {};
-              const gap = item.gap_detection || {};
-              let reasoning = "";
-              if (isRecategorized) {
-                reasoning = recat.reason || "";
-                if (recat.evidence?.length) reasoning += " Evidence: " + recat.evidence.join(". ") + ".";
-              } else if (isGap) {
-                reasoning = gap.reason || `Gap detected: ${item.description}`;
-              } else if (policyCheck.applicable_rule) {
-                reasoning = `${policyCheck.applicable_rule}. Amount ₹${item.amount} is ${policyCheck.within_limit ? "within" : "over"} the ₹${policyCheck.limit} limit.`;
-              }
-              return {
-                id: item.id || `EXP-${String(i + 1).padStart(3, "0")}`,
-                description: (item.description || "").replace(/ — .*$/, ""),
-                vendor: (item.description || "").replace(/ — .*$/, ""),
-                date: item.date || "", amount: item.amount || 0, currency: item.currency || "INR",
-                category: item.category || "Miscellaneous",
-                original_category: isRecategorized ? (recat.from || null) : null,
-                confidence: item.confidence || 0, sources: item.sources || [], reasoning,
-                policy_status: isRecategorized ? "within_policy_after_recategorization" : isGap ? "pending_review" : policyCheck.within_limit ? "within_policy" : "exceeds_policy",
-                flag_reason: isRecategorized ? `Re-categorized from ${recat.from} to ${recat.to}.` : isGap ? "Gap detected" : null,
-                recommendation: isRecategorized ? "approve_with_review" : isGap ? "request_employee_input" : item.status === "compliant" ? "auto_approve" : "flag_for_review",
-              };
-            });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const flaggedItems = items.filter((i: any) => i.recommendation === "approve_with_review" || i.recommendation === "flag_for_review");
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const missingItems = (raw.items || []).filter((i: any) => i.status === "gap_detected").map((item: any) => {
-              const gap = item.gap_detection || {};
-              return { id: item.id || "EXP-GAP", detected_gap: gap.reason || item.description || "Gap", estimated_amount: item.amount || 0, currency: item.currency || "INR", evidence: `${gap.from_location || ""} → ${gap.to_location || ""}`, confidence: item.confidence || 67, action_needed: "Confirm amount" };
-            });
-            const summary = raw.summary || {};
-            assemblyOutput = {
-              report: {
-                id: raw.trip_id || `RPT-${Date.now()}`, traveler: raw.traveler?.name || "Unknown",
-                trip_summary: `${raw.trip?.destination || ""}, ${raw.trip?.dates || ""} — ${raw.trip?.purpose || ""}`,
-                total_amount: summary.total_amount || 0, currency: summary.currency || "INR",
-                cost_center: raw.traveler?.cost_center || "", approver: raw.traveler?.approver || "",
-                items, flagged_items: flaggedItems, missing_items: missingItems,
-                summary: {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  total_items: items.length, auto_approve_count: items.filter((i: any) => i.recommendation === "auto_approve").length,
-                  review_count: flaggedItems.length, missing_count: missingItems.length,
-                  total_amount: summary.total_amount || 0, overall_confidence: summary.avg_confidence || 90,
-                },
-              },
-            };
-          }
+        if (fallback?.response) {
+          // Merge fallback data into scenario for the engine
+          scenarioData = { ...scenarioData, ...fallback.response };
         }
       }
 
-      const latencyMs = Date.now() - startTime;
-      const report = assemblyOutput.report;
+      // DETERMINISTIC ASSEMBLY — instant, no LLM call
+      const report = assembleReport(scenarioData, policy as unknown as RawPolicy);
 
-      // Save report to reports table with correct column names
+      const latencyMs = Date.now() - startTime;
+
+      // Save report to Supabase
       const reportId = report.id || `RPT-${Date.now()}`;
       const { error: reportError } = await ctx.supabase
         .from("reports")
@@ -281,38 +88,36 @@ export const reportRouter = router({
         .single();
 
       if (reportError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to save report",
-        });
+        console.error("Report save error:", reportError);
+        // Don't throw — the report was assembled, just save failed
       }
 
-      // Log to audit_log (correct column names: event_type, details)
+      // Log to audit_log
       await ctx.supabase.from("audit_log").insert({
         event_type: "assembly",
         user_id: ctx.user.id,
         report_id: reportId,
         scenario_id: input.scenarioId,
         details: {
-          fallback_used: useFallback,
           latency_ms: latencyMs,
           total_amount: report.total_amount,
           item_count: report.items.length,
+          engine: "deterministic",
         },
       });
 
-      // Log to ai_metrics (correct column names: prompt_type, model)
+      // Log to ai_metrics
       await ctx.supabase.from("ai_metrics").insert({
         prompt_type: "assembly",
-        model: useFallback ? "fallback" : "claude-haiku-4-5-20251001",
+        model: "deterministic",
         latency_ms: latencyMs,
         tokens_in: 0,
         tokens_out: 0,
         confidence: report.summary.overall_confidence,
-        fallback_used: useFallback,
+        fallback_used: false,
       });
 
-      return { ...assemblyOutput, _fallback: didFallback };
+      return { report, _fallback: false };
     }),
 
   getByScenario: protectedProcedure
@@ -352,7 +157,6 @@ export const reportRouter = router({
         });
       }
 
-      // Log to audit_log
       await ctx.supabase.from("audit_log").insert({
         event_type: "submit",
         user_id: ctx.user.id,
