@@ -160,9 +160,36 @@ async function handleFallback(
           )
         );
       }
+      // Build structured metadata from fallback response
+      const responseData = fallbackData.response || {};
+      const actions = (responseData.actions || []).map((a: Record<string, unknown>) => {
+        // Normalize action types to match our schema
+        if (a.type === "update_item" && a.item_id && a.updates) {
+          const updates = a.updates as Record<string, unknown>;
+          return { type: "update_amount", item_id: a.item_id, new_value: updates.amount, old_value: null };
+        }
+        if (a.type === "submit_report") return { type: "submit_report" };
+        return a;
+      });
+
+      // Show submit button after taxi confirmation or submit response
+      const isConfirmTaxi = fallbackKey === "chat-confirm-taxi";
+      const isSubmit = fallbackKey === "chat-submit";
+      const showSubmitButton = isConfirmTaxi || responseData.show_submit_button || false;
+
       controller.enqueue(
         encoder.encode(
-          `data: ${JSON.stringify({ type: "done", content: text, fallback: true })}\n\n`
+          `data: ${JSON.stringify({
+            type: "done",
+            content: JSON.stringify({
+              response: text,
+              actions,
+              report_updated: actions.length > 0,
+              show_submit_button: showSubmitButton,
+              submitted: isSubmit,
+            }),
+            fallback: true,
+          })}\n\n`
         )
       );
       controller.close();

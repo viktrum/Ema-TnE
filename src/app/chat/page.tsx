@@ -278,6 +278,10 @@ export default function ChatPage() {
         if (parsed?.show_submit_button) {
           setShowSubmitButton(true);
         }
+
+        if (parsed?.submitted) {
+          setHasSubmitted(true);
+        }
       } catch {
         // Non-JSON response text, check for keywords
         const lower = fullResponse.toLowerCase();
