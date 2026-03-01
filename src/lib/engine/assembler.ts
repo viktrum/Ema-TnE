@@ -84,12 +84,13 @@ export async function assembleReport(
     const confidence = ai?.confidence || txn.confidence || 80;
     const reasoning = ai?.reasoning || buildFallbackReasoning(txn, policyCheck, recat, gap);
 
-    // Determine if this was re-categorized (AI changed the merchant category)
-    const originalCategory = recat?.from ||
-      (ai && ai.category !== txn.original_category && txn.original_category !== txn.category ? txn.original_category : null) ||
-      (txn.status === "re-categorized" ? (recat?.from || null) : null);
-
-    const isRecategorized = originalCategory !== null;
+    // Determine if this was ACTUALLY re-categorized
+    // Re-categorization means: the AI/engine changed FROM the default expense category
+    // to a DIFFERENT expense category based on context evidence.
+    // "Airlines" → "Flights" is NOT re-categorization (it's the default mapping).
+    // "Restaurants" → "Client Entertainment" IS re-categorization.
+    const isRecategorized = txn.status === "re-categorized" && !!recat;
+    const originalCategory = isRecategorized ? (recat?.from || null) : null;
 
     const policyStatus = isRecategorized ? "within_policy_after_recategorization"
       : isGap ? "pending_review"
