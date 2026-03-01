@@ -106,6 +106,44 @@
 | Actionable suggestions | — | 1 | — | — |
 | Noise / unhelpful | — | 24 (carryover) | — | — |
 
+---
+
+## PR #3: feat(phase-3): dashboard — 3-panel layout, approvals, realtime sync
+
+**PR URL:** https://github.com/viktrum/Ema-TnE/pull/3
+**Files changed:** 10 | **Additions:** 1,088
+
+### Internal Code Review (direct review)
+
+**Method:** Direct file review of dashboard page + components
+**Time:** ~5 min
+
+**Issues found:** 3
+1. **CRITICAL:** Dashboard role check used `user.user_metadata?.role` which is empty for dashboard-created users — would redirect all managers to /chat. Fixed with public.users DB lookup.
+2. **MEDIUM:** `supabase` client created outside useEffect — new client on every render.
+3. **LOW:** StatsPanel `Stat.value` typed as `string` but store has `string | number`. Fixed.
+
+### CodeRabbit CLI Review (PR #3)
+
+**Method:** `coderabbit review --plain`
+**Issues found:** 1 (contrast ratio inaccuracy in comments — cosmetic)
+**Quality:** LOW — only found a comment accuracy issue, missed the critical role check bug.
+
+### Gate 3 UAT Results
+
+| Test | Status |
+|---|---|
+| G3-01: Dashboard loads | PASS |
+| G3-02: "4 hours" North Star | PASS |
+| G3-03: 38 auto-approved | PASS (verified: 38) |
+| G3-04: 9 flagged items | PASS (verified: 9) |
+| G3-05: Tanya's dinner featured | PASS |
+| G3-06: Approve button | MANUAL |
+| G3-07: Reject modal | MANUAL |
+| G3-08: Ask Employee modal | MANUAL |
+| G3-09: CHRO health stats | PASS |
+| G3-10: Navigation | MANUAL |
+
 ### Observations So Far
 
 - **Internal review (Claude Code skill)** caught ALL critical schema/column mismatches in PR #1 — these would have been runtime failures. Highest value per review.
