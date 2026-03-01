@@ -64,58 +64,86 @@ export const reportRouter = router({
         }
 
         // Transform fallback data to match AssemblyOutputSchema
-        // Fallback seed data has a different shape than the schema
         const raw = fallback.response;
         if (raw.report) {
-          // Already wrapped — try parsing directly
           assemblyOutput = AssemblyOutputSchema.parse(raw);
         } else {
-          // Transform flat fallback structure to schema format
-          const items = (raw.items || []).map((item: Record<string, unknown>, i: number) => ({
-            id: item.id || `EXP-${String(i + 1).padStart(3, "0")}`,
-            description: item.description || "",
-            vendor: item.vendor || item.description || "",
-            date: item.date || "",
-            amount: item.amount || 0,
-            currency: item.currency || "INR",
-            category: item.category || "Miscellaneous",
-            original_category: item.original_category || null,
-            confidence: item.confidence || 0,
-            sources: item.sources || [],
-            reasoning: item.reasoning || item.policy_check?.toString() || "",
-            policy_status: item.status === "compliant" ? "within_policy"
-              : item.original_category ? "within_policy_after_recategorization"
-              : "pending_review",
-            flag_reason: item.flag_reason || null,
-            recommendation: item.status === "compliant" ? "auto_approve"
-              : item.original_category ? "approve_with_review"
-              : item.status === "gap_detected" ? "request_employee_input"
-              : "flag_for_review",
-          }));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const items = (raw.items || []).map((item: any, i: number) => {
+            const isRecategorized = item.status === "re-categorized" && item.re_categorization;
+            const isGap = item.status === "gap_detected";
+            const policyCheck = item.policy_check || {};
+            const recat = item.re_categorization || {};
+            const gap = item.gap_detection || {};
 
-          const flaggedItems = items.filter(
-            (item: Record<string, unknown>) =>
-              item.recommendation !== "auto_approve" && item.recommendation !== "request_employee_input"
-          );
-          const missingItems = (raw.items || [])
-            .filter((item: Record<string, unknown>) => item.status === "gap_detected")
-            .map((item: Record<string, unknown>) => ({
-              id: item.id || "EXP-GAP",
-              detected_gap: item.gap_detection?.toString() || item.description || "Transport gap detected",
-              estimated_amount: item.amount || 0,
+            // Build reasoning string from available data
+            let reasoning = "";
+            if (isRecategorized) {
+              reasoning = recat.reason || "";
+              if (recat.evidence?.length) {
+                reasoning += " Evidence: " + recat.evidence.join(". ") + ".";
+              }
+            } else if (isGap) {
+              reasoning = gap.reason || `Gap detected: ${item.description}`;
+            } else if (policyCheck.applicable_rule) {
+              reasoning = `${policyCheck.applicable_rule}. Amount ₹${item.amount} is ${policyCheck.within_limit ? "within" : "over"} the ₹${policyCheck.limit} limit.`;
+            }
+
+            return {
+              id: item.id || `EXP-${String(i + 1).padStart(3, "0")}`,
+              description: (item.description || "").replace(/ — .*$/, ""),
+              vendor: (item.description || "").replace(/ — .*$/, ""),
+              date: item.date || "",
+              amount: item.amount || 0,
               currency: item.currency || "INR",
-              evidence: item.gap_detection?.toString() || "Gap detected between trip legs",
-              confidence: item.confidence || 67,
-              action_needed: "Confirm amount and provide details",
-            }));
+              category: item.category || "Miscellaneous",
+              original_category: isRecategorized ? (recat.from || null) : null,
+              confidence: item.confidence || 0,
+              sources: item.sources || [],
+              reasoning,
+              policy_status: isRecategorized ? "within_policy_after_recategorization"
+                : isGap ? "pending_review"
+                : policyCheck.within_limit ? "within_policy"
+                : "exceeds_policy",
+              flag_reason: isRecategorized
+                ? `Re-categorized from ${recat.from} to ${recat.to}. ${policyCheck.applicable_rule || ""}`
+                : isGap ? "Gap detected — needs employee confirmation"
+                : null,
+              recommendation: isRecategorized ? "approve_with_review"
+                : isGap ? "request_employee_input"
+                : item.status === "compliant" ? "auto_approve"
+                : "flag_for_review",
+            };
+          });
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const flaggedItems = items.filter((item: any) =>
+            item.recommendation === "approve_with_review" || item.recommendation === "flag_for_review"
+          );
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const missingItems = (raw.items || [])
+            .filter((item: any) => item.status === "gap_detected")
+            .map((item: any) => {
+              const gap = item.gap_detection || {};
+              return {
+                id: item.id || "EXP-GAP",
+                detected_gap: gap.reason || `Transport from ${gap.from_location || "?"} to ${gap.to_location || "?"}`,
+                estimated_amount: item.amount || 0,
+                currency: item.currency || "INR",
+                evidence: `${gap.from_location || ""} → ${gap.to_location || ""}, ~${gap.estimated_distance_km || "?"}km. ${gap.reason || ""}`,
+                confidence: item.confidence || 67,
+                action_needed: gap.needs_confirmation ? "Confirm amount and provide receipt if available" : "Review",
+              };
+            });
 
           const summary = raw.summary || {};
           assemblyOutput = {
             report: {
-              id: `RPT-${Date.now()}`,
+              id: raw.trip_id || `RPT-${Date.now()}`,
               traveler: raw.traveler?.name || "Unknown",
               trip_summary: `${raw.trip?.destination || ""}, ${raw.trip?.dates || ""} — ${raw.trip?.purpose || ""}`,
-              total_amount: summary.total_amount || items.reduce((s: number, i: Record<string, unknown>) => s + (Number(i.amount) || 0), 0),
+              total_amount: summary.total_amount || 0,
               currency: summary.currency || "INR",
               cost_center: raw.traveler?.cost_center || "",
               approver: raw.traveler?.approver || "",
@@ -124,7 +152,8 @@ export const reportRouter = router({
               missing_items: missingItems,
               summary: {
                 total_items: items.length,
-                auto_approve_count: items.filter((i: Record<string, unknown>) => i.recommendation === "auto_approve").length,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                auto_approve_count: items.filter((i: any) => i.recommendation === "auto_approve").length,
                 review_count: flaggedItems.length,
                 missing_count: missingItems.length,
                 total_amount: summary.total_amount || 0,
