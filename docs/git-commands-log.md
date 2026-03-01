@@ -83,6 +83,24 @@ git stash pop                                # Restore the stashed files
 
 ---
 
+## Phase 2 → Phase 3 Transition
+
+### 10. Merge PR #2 via GitHub CLI
+```bash
+gh pr merge 2 --merge --delete-branch
+```
+**Why:** Merges the PR on GitHub (not local merge). `--delete-branch` cleans up the remote feature branch. This is the proper flow — merge happens via GitHub, not `git merge` locally.
+
+### 11. Create Phase 3 branch from updated develop
+```bash
+git checkout develop
+git pull origin develop           # Get the merge commit from GitHub
+git checkout -b feature/phase-3-dashboard
+```
+**Why:** Switch to develop, pull to get the PR merge, then branch off for Phase 3. `git pull` is needed because the merge happened on GitHub (remote), not locally.
+
+---
+
 ## Git Workflow Summary
 
 ```
