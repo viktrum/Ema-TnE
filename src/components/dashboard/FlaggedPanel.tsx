@@ -26,7 +26,7 @@ interface FlaggedItem {
   flag_reason: string;
   flag_severity: 'HIGH' | 'MEDIUM' | 'LOW';
   items?: FlaggedItemDetail[];
-  reasoning?: string;
+  reasoning?: string | { summary?: string; ai_reasoning?: string } | null;
   sources?: string[];
 }
 
@@ -150,7 +150,9 @@ export function FlaggedPanel({
                         AI Reasoning
                       </p>
                       <p className="text-sm text-gray-700 leading-relaxed">
-                        {item.reasoning}
+                        {typeof item.reasoning === 'string'
+                          ? item.reasoning
+                          : item.reasoning?.summary || item.reasoning?.ai_reasoning || ''}
                       </p>
                     </div>
                   )}
