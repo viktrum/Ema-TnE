@@ -2,6 +2,43 @@ import { z } from "zod/v4";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "@/server/trpc/init";
 
+// Look up employee info from dashboard_reports → reports for chat notification
+async function notifyEmployee(
+  supabase: any,
+  reportId: number,
+  reviewerName: string,
+  content: string,
+) {
+  // Get scenario_id from dashboard_reports
+  const { data: dashReport } = await supabase
+    .from("dashboard_reports")
+    .select("scenario_id")
+    .eq("id", reportId)
+    .single();
+
+  if (!dashReport?.scenario_id) return;
+
+  // Find the employee who submitted this report
+  const { data: report } = await supabase
+    .from("reports")
+    .select("user_id, scenario_id")
+    .eq("scenario_id", dashReport.scenario_id)
+    .eq("status", "submitted")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!report?.user_id) return;
+
+  // Insert Ema notification as a chat message
+  await supabase.from("chat_messages").insert({
+    user_id: report.user_id,
+    scenario_id: report.scenario_id,
+    role: "assistant",
+    content,
+  });
+}
+
 export const approvalRouter = router({
   approve: protectedProcedure
     .input(z.object({
@@ -29,13 +66,21 @@ export const approvalRouter = router({
         .update({ status: "auto_approved" })
         .eq("id", input.reportId);
 
-      // Log to audit
-      await ctx.supabase.from("audit_log").insert({
-        event_type: "approve",
-        user_id: ctx.user.id,
-        report_id: String(input.reportId),
-        details: { item_id: input.itemId, notes: input.notes },
-      });
+      // Notify employee via chat message + audit log (parallel)
+      await Promise.all([
+        notifyEmployee(
+          ctx.supabase,
+          input.reportId,
+          "Mihir",
+          "<p><strong>Update:</strong> Mihir has <span style=\"color:#16a34a\">approved</span> your expense report.</p>",
+        ),
+        ctx.supabase.from("audit_log").insert({
+          event_type: "approve",
+          user_id: ctx.user.id,
+          report_id: String(input.reportId),
+          details: { item_id: input.itemId, notes: input.notes },
+        }),
+      ]);
 
       return { success: true };
     }),
@@ -65,12 +110,21 @@ export const approvalRouter = router({
         .update({ status: "rejected" })
         .eq("id", input.reportId);
 
-      await ctx.supabase.from("audit_log").insert({
-        event_type: "reject",
-        user_id: ctx.user.id,
-        report_id: String(input.reportId),
-        details: { reason: input.reason, notes: input.notes },
-      });
+      const notesText = input.notes ? ` ${input.notes}` : '';
+      await Promise.all([
+        notifyEmployee(
+          ctx.supabase,
+          input.reportId,
+          "Mihir",
+          `<p><strong>Update:</strong> Mihir has <span style="color:#dc2626">rejected</span> your expense report. Reason: ${input.reason}.${notesText}</p>`,
+        ),
+        ctx.supabase.from("audit_log").insert({
+          event_type: "reject",
+          user_id: ctx.user.id,
+          report_id: String(input.reportId),
+          details: { reason: input.reason, notes: input.notes },
+        }),
+      ]);
 
       return { success: true };
     }),
@@ -98,12 +152,20 @@ export const approvalRouter = router({
         .update({ status: "pending_info" })
         .eq("id", input.reportId);
 
-      await ctx.supabase.from("audit_log").insert({
-        event_type: "ask_employee",
-        user_id: ctx.user.id,
-        report_id: String(input.reportId),
-        details: { question: input.question },
-      });
+      await Promise.all([
+        notifyEmployee(
+          ctx.supabase,
+          input.reportId,
+          "Mihir",
+          `<p><strong>Question from Mihir:</strong> ${input.question}</p>`,
+        ),
+        ctx.supabase.from("audit_log").insert({
+          event_type: "ask_employee",
+          user_id: ctx.user.id,
+          report_id: String(input.reportId),
+          details: { question: input.question },
+        }),
+      ]);
 
       return { success: true };
     }),

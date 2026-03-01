@@ -144,6 +144,47 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenarioId]);
 
+  // Realtime: listen for Ema notifications (approval/reject/ask from manager)
+  useEffect(() => {
+    if (!userId) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel('chat-notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const msg = payload.new as any;
+          // Only process assistant messages not already in Zustand (dedup with streaming)
+          if (msg.role === 'assistant') {
+            const existing = useChatStore.getState().messages;
+            const alreadyExists = existing.some((m) => m.id === msg.id);
+            if (!alreadyExists) {
+              addMessage({
+                id: msg.id,
+                role: 'assistant',
+                content: msg.content,
+                timestamp: new Date(msg.created_at).getTime(),
+              });
+              toast('New update from Ema');
+            }
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
   // Send message handler
   const handleSend = useCallback(
     async (text: string) => {

@@ -157,11 +157,74 @@ export const reportRouter = router({
         });
       }
 
+      // Bridge to dashboard_reports for realtime dashboard (Phase 3.5)
+      const reportItems = (data.items as any[]) || [];
+      const flaggedItems = (data.flagged_items as any[]) || [];
+      const hasFlagged = flaggedItems.length > 0;
+
+      const avgConfidence = reportItems.length > 0
+        ? Math.round(reportItems.reduce((sum: number, item: any) => sum + (item.confidence || 0), 0) / reportItems.length)
+        : 0;
+
+      // Fetch scenario for destination + dates
+      const { data: scenario } = await ctx.supabase
+        .from("scenarios")
+        .select("destination, start_date, end_date")
+        .eq("id", data.scenario_id)
+        .single();
+
+      // Fetch user for role
+      const { data: dbUser } = await ctx.supabase
+        .from("users")
+        .select("role, name")
+        .eq("id", ctx.user.id)
+        .single();
+
+      const initials = data.traveler_name
+        .split(' ')
+        .map((p: string) => p[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+
+      const dates = scenario
+        ? `${new Date(scenario.start_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}-${new Date(scenario.end_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`
+        : 'Today';
+
+      // Determine flag details from the most severe flagged item
+      let flagReason: string | null = null;
+      let flagSeverity: string | null = null;
+      if (hasFlagged) {
+        const topFlag = flaggedItems[0] as any;
+        flagReason = topFlag.flag_reason || topFlag.reasoning || `${topFlag.description || 'Item'} flagged for review`;
+        flagSeverity = (topFlag.confidence ?? 80) < 70 ? 'HIGH' : (topFlag.confidence ?? 80) < 85 ? 'MEDIUM' : 'LOW';
+      }
+
+      await ctx.supabase.from("dashboard_reports").insert({
+        scenario_id: data.scenario_id,
+        traveler_name: data.traveler_name,
+        traveler_role: dbUser?.role || 'Employee',
+        traveler_initials: initials,
+        destination: scenario?.destination || data.trip_summary?.split(',')[0] || 'N/A',
+        dates,
+        total_amount: data.total_amount,
+        currency: data.currency || 'INR',
+        item_count: reportItems.length,
+        avg_confidence: avgConfidence,
+        status: hasFlagged ? 'flagged' : 'auto_approved',
+        flag_reason: flagReason,
+        flag_severity: flagSeverity,
+        items: data.items,
+        reasoning: data.summary || {},
+        sources: [...new Set(reportItems.flatMap((item: any) => item.sources || []))],
+      });
+
+      // Audit log + return (parallelized for speed)
       await ctx.supabase.from("audit_log").insert({
         event_type: "submit",
         user_id: ctx.user.id,
         report_id: input.reportId,
-        details: {},
+        details: { dashboard_bridge: true },
       });
 
       return data;

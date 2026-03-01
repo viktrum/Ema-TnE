@@ -118,9 +118,12 @@ export default function DashboardPage() {
   // Realtime
   useEffect(() => {
     const reportsChannel = supabase
-      .channel('reports-changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, (payload) => {
-        toast.success(`New report from ${payload.new.traveler_name}`);
+      .channel('dashboard-reports-changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dashboard_reports' }, (payload) => {
+        const newReport = payload.new as any;
+        toast.success(`New report from ${newReport.traveler_name || 'an employee'}`, {
+          description: newReport.status === 'flagged' ? 'Needs your review' : 'Auto-approved',
+        });
         reportsQuery.refetch();
       })
       .subscribe();
