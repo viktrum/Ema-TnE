@@ -30,7 +30,7 @@
 
 **Quality:** HIGH — found real bugs that would have caused runtime failures. The schema mismatch issues (1-4) were the most critical — every DB write would have failed.
 
-### CodeRabbit CLI Review
+### CodeRabbit CLI Review (PR #1)
 
 **Method:** `coderabbit review --plain` (ran locally on working tree changes)
 **Time to review:** ~30 seconds
@@ -40,23 +40,55 @@
 2. Missing CSS design tokens (`--ema-red-light`, `--ema-blue-light`) referenced in spec but not defined
 3. Type inconsistency: `featuredId` is `number` in store but `string` in spec
 
-**Quality:** MEDIUM — found valid but lower-severity issues. The missing CSS tokens and type mismatch are useful catches. Did NOT find the critical schema mismatches that the internal review caught.
+**Quality:** MEDIUM — found valid but lower-severity issues. Did NOT find the critical schema mismatches.
 
-### CodeRabbit GitHub App Review
+### CodeRabbit GitHub App Review (PR #1)
 
-**Status:** NOT INSTALLED — GitHub App needs to be installed on viktrum/Ema-TnE
+**Status:** PENDING INSTALLATION — Install at https://github.com/marketplace/coderabbitai
 
-### Greptile GitHub App Review
+### Greptile GitHub App Review (PR #1)
 
-**Status:** NOT INSTALLED — GitHub App needs to be installed on viktrum/Ema-TnE
+**Status:** PENDING INSTALLATION — Install at https://github.com/apps/greptile-apps
 
 ---
 
-## Evaluation Summary Table
+## PR #2: feat(phase-2): chat UI — streaming, expense table, reasoning panel
+
+**PR URL:** https://github.com/viktrum/Ema-TnE/pull/2
+**Files changed:** 15 | **Additions:** 2,011
+
+### Internal Code Review (Claude Code `code-review:code-review` skill)
+
+**Status:** PENDING — to be run
+
+### CodeRabbit CLI Review (PR #2)
+
+**Method:** `coderabbit review --plain` (ran locally)
+**Time to review:** ~2 minutes
+**Total findings reported:** 26 (includes carryover from PR #1 files)
+
+**New issues specific to Phase 2:**
+1. Chat route `onError` handler doesn't persist error state to `ai_metrics` — makes debugging production issues difficult
+2. Postgres version mismatch warning — `supabase/config.toml` sets v17 but remote may differ
+
+**Quality:** LOW-MEDIUM for Phase 2 specifically — the 26 findings include many carryover items from Phase 1 files. Only 2 new findings for the Phase 2 code. The error logging suggestion is valid but not critical for a demo.
+
+### CodeRabbit GitHub App Review (PR #2)
+
+**Status:** PENDING INSTALLATION
+
+### Greptile GitHub App Review (PR #2)
+
+**Status:** PENDING INSTALLATION
+
+---
+
+## Cumulative Evaluation Summary
 
 | Metric | Internal (Claude Code) | CodeRabbit CLI | CodeRabbit App | Greptile App |
 |---|---|---|---|---|
-| Time to first review | ~2 min | ~30 sec | N/A | N/A |
+| **PR #1** | | | | |
+| Time to first review | ~2 min | ~30 sec | PENDING | PENDING |
 | Total comments | 13 | 3 | — | — |
 | Quality (1-5) | 5 | 3 | — | — |
 | False positives | 1-2 | 0 | — | — |
@@ -64,11 +96,28 @@
 | Security issues flagged | 2 | 0 | — | — |
 | Actionable suggestions | 9 | 3 | — | — |
 | Noise / unhelpful | 2 | 0 | — | — |
+| **PR #2** | | | | |
+| Time to first review | PENDING | ~2 min | PENDING | PENDING |
+| Total comments | — | 2 (new) | — | — |
+| Quality (1-5) | — | 2 | — | — |
+| False positives | — | 0 | — | — |
+| Critical bugs caught | — | 0 | — | — |
+| Security issues flagged | — | 0 | — | — |
+| Actionable suggestions | — | 1 | — | — |
+| Noise / unhelpful | — | 24 (carryover) | — | — |
 
-### Observations
+### Observations So Far
 
-- Internal review caught ALL the critical schema/column mismatches — these would have been runtime failures on every DB operation
-- CodeRabbit CLI is faster but shallower — good for catching CSS/config issues but missed the core bugs
-- CodeRabbit CLI reviews local working tree changes, not PR diffs specifically
-- Both tools complement each other: internal for depth, CodeRabbit for breadth/speed
-- GitHub App versions (both CodeRabbit and Greptile) still need to be installed for PR-level reviews
+- **Internal review (Claude Code skill)** caught ALL critical schema/column mismatches in PR #1 — these would have been runtime failures. Highest value per review.
+- **CodeRabbit CLI** is fast (~30s-2min) and good for CSS/config/surface-level issues. Weak at cross-file schema validation. Carries over old findings which adds noise.
+- **GitHub Apps** (both CodeRabbit and Greptile) not yet installed — need to install to compare PR-level automated reviews.
+- **Complementary pattern emerging**: Internal for depth + correctness, CodeRabbit CLI for speed + surface issues.
+
+### Setup Status
+
+| Tool | Status | Install Link |
+|---|---|---|
+| Claude Code `code-review:code-review` | ✅ Installed & working | Built-in skill |
+| CodeRabbit CLI | ✅ Installed & working | `curl -fsSL https://cli.coderabbit.ai/install.sh \| sh` |
+| CodeRabbit GitHub App | ❌ Not installed | https://github.com/marketplace/coderabbitai |
+| Greptile GitHub App | ❌ Not installed | https://github.com/apps/greptile-apps |
