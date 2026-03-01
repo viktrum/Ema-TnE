@@ -153,3 +153,8 @@ Phases:
 - Better visual hierarchy: message → table → reasoning → gap question
 - Streaming animation, typing indicator refinement
 - Mobile responsiveness
+- **Dashboard submitted report polish** — reports submitted via chat→dashboard bridge show raw assembly data instead of clean dashboard format:
+  - Severity logic inverted (high confidence → LOW, should use flag type not confidence)
+  - Flag reason is raw assembly text, needs human-readable formatting
+  - Sources show raw identifiers ("Email (PNR: ABC123)"), need clean labels ("Calendar", "CRM", "Policy")
+  - Reasoning section shows badges but no explanation text

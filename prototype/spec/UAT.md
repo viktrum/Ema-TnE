@@ -494,6 +494,16 @@ Go to `/` → click Mumbai → verify → go back → click Bangalore → differ
 - After 3s: fades/transitions to the Ema chat
 - Clicking during the splash skips it immediately
 
+### G5-01b: Dashboard submitted report display quality
+
+**STEPS:** As Tanya, submit a report via chat. As Mihir, view the submitted report in the dashboard inbox.
+**EXPECT:**
+- Flag severity matches the type of issue (re-categorization = HIGH, not derived from confidence)
+- Flag reason is human-readable: "Dinner Re-categorization: ₹8,500 dinner at Trishna..." (not raw assembly data)
+- Sources show clean labels: "Calendar", "CRM", "Policy" (not raw identifiers like "Email (PNR: ABC123)")
+- Reasoning section shows explanation text (not just source badges)
+- Visual quality matches seeded dashboard items (hand-crafted rows)
+
 ### G5-02: Loading progress steps
 
 **STEPS:** During assembly loading (after "Before" splash fades)

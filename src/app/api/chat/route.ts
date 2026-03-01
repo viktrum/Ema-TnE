@@ -76,12 +76,22 @@ export async function POST(req: NextRequest) {
             );
             controller.close();
 
-            // Save assistant message
+            // Save assistant message — extract readable text if LLM returned JSON
+            let saveContent = fullResponse;
+            try {
+              const cleaned = fullResponse
+                .replace(/^[\s]*```(?:json)?\s*/i, '')
+                .replace(/\s*```[\s]*$/, '')
+                .trim();
+              const parsed = JSON.parse(cleaned);
+              if (parsed?.response) saveContent = parsed.response;
+            } catch { /* not JSON, save as-is */ }
+
             await supabase.from("chat_messages").insert({
               user_id: user.id,
               scenario_id: scenarioId,
               role: "assistant",
-              content: fullResponse,
+              content: saveContent,
             });
           },
           onError(error: Error) {

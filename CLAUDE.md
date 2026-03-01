@@ -121,6 +121,7 @@ docs/               # Code review evaluation, git commands log
 - **RLS + Realtime:** Events are silently dropped if the subscriber can't SELECT the row. Always verify SELECT policy exists.
 - **Dedup on chat page:** Chat messages created via SSE streaming are added to Zustand locally AND INSERTed to `chat_messages` server-side. The realtime subscription fires for those INSERTs — must skip messages already in Zustand to avoid duplicates.
 - **`reports` ↔ `dashboard_reports` link:** Uses `scenario_id` (exists on both tables). No bridge column. `approvals.report_id` is TEXT (no FK) — shared by chat flow (text IDs) and dashboard flow (stringified SERIAL IDs).
+- **Dashboard submitted report quality:** The `report.submit` mapper produces raw assembly data for `dashboard_reports` entries. Seeded rows have hand-crafted `flag_reason`, `flag_severity`, `sources`, `reasoning`. Submitted rows need polish (Phase 5): severity should use flag type not confidence, sources need clean labels, reasoning needs explanation text.
 
 ## Workflow
 - Workflow enforcement is enabled (`.workflow-enforced`)
