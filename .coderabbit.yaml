@@ -1,0 +1,18 @@
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  path_instructions:
+    - path: "src/components/**"
+      instructions: "Review for accessibility, performance, and adherence to Ema design system (colors in globals.css)"
+    - path: "src/server/**"
+      instructions: "Review for type safety, error handling, and Supabase RLS compatibility"
+    - path: "src/lib/llm/**"
+      instructions: "Review for retry logic, timeout handling, and fallback behavior"
+    - path: "supabase/**"
+      instructions: "Review for SQL correctness, RLS policy coverage, and seed data consistency"
+chat:
+  auto_reply: true

@@ -1,9 +1,60 @@
 # Ema TnE - Project Rules
 
-> Updated at: 2026-02-28 19:22 IST
+> Updated at: 2026-03-01 19:35 IST
+
+## MANDATORY: Post-Phase Checklist (DO NOT SKIP)
+> Updated at: 2026-03-01 19:35 IST
+
+After completing EVERY phase, you MUST run through this checklist IN ORDER before starting the next phase. Cross-reference with the original execution plan to verify nothing was missed.
+
+### Code Quality
+- [ ] `npx tsc --noEmit` — clean TypeScript compilation
+- [ ] `npm run build` — successful production build
+- [ ] Run gate tests for the phase (check spec/UAT.md for exact tests)
+
+### Code Review (ALL THREE)
+- [ ] Run `code-review:code-review` skill on the PR (5 parallel agents)
+- [ ] Run `coderabbit review --plain` locally
+- [ ] Fix any critical issues found
+- [ ] Save ALL findings to `docs/code-review-evaluation.md`
+
+### Git Workflow
+- [ ] Commit with conventional format: `feat(phase-N): description`
+- [ ] Push to feature branch
+- [ ] Create PR with `gh pr create --base develop`
+- [ ] Post code review comment on PR with `gh pr comment`
+- [ ] Update `docs/git-commands-log.md` with any new git commands used
+
+### Knowledge Files
+- [ ] Update `plan.md` — append phase completion status + gate result
+- [ ] Update `memory.md` — add phase learnings, gotchas, code review observations
+- [ ] Update `CLAUDE.md` — ONLY if directory structure or architecture changed
+- [ ] Update `docs/code-review-evaluation.md` — add PR data for this phase
+
+### Context Management
+- [ ] If conversation is getting long (50+ exchanges): run `/handover` and start fresh session
+- [ ] If heavy agent output consumed context: checkpoint by committing + updating memory
+
+### Verify Against Original Plan
+- [ ] Re-read the phase section in the execution plan
+- [ ] Confirm all sub-tasks listed are completed
+- [ ] Confirm all files listed in the plan exist
+- [ ] Confirm gate checkpoint criteria are met
+
+---
 
 ## Project Overview
-Time and Expense Management application.
+Two parallel tracks:
+
+### Track 1: TnE Tool (primary)
+Time and Expense Management application — the main codebase we're building.
+
+### Track 2: AI Code Review Evaluation (secondary)
+Evaluating CodeRabbit and Greptile as AI code review tools. Using this repo's PRs as the test surface. Analysis covers:
+- Onboarding: friction, clarity, time-to-value
+- Core features: value, usability gaps, differentiation
+- ICP, core problem solved, churn risks
+- Side-by-side comparison on the same PRs
 
 ## Tech Stack
 - **Framework:** Next.js 16 (App Router, Turbopack)
@@ -17,19 +68,34 @@ Time and Expense Management application.
 - **Package Manager:** npm
 
 ## Directory Structure
+> Updated at: 2026-03-01 19:30 IST
 ```
 src/
   app/              # Next.js App Router pages and layouts
     api/trpc/       # tRPC API route handler
+    api/chat/       # SSE streaming endpoint (plain Route Handler, not tRPC — SSE requires it)
+    login/          # Click-to-login page (4 user cards)
+    chat/           # Employee chat screen
+    dashboard/      # Admin dashboard (Phase 3)
   lib/
     supabase/       # Supabase client (browser), server, middleware helpers
     trpc/           # tRPC client, server caller, and React provider
+    llm/            # LLM client wrapper, Claude provider, prompts
     utils.ts        # shadcn/ui utility (cn function)
   server/
-    trpc/           # tRPC initialization (router, procedures)
-    routers/        # tRPC route definitions
+    trpc/           # tRPC initialization (router, procedures, context with auth)
+    routers/        # tRPC route definitions (health, scenario, report)
+    schemas/        # Zod schemas shared between tRPC and LLM (assembly, chat, categorize)
+  stores/           # Zustand stores (auth, chat, dashboard)
   components/
     ui/             # shadcn/ui components (auto-generated)
+    chat/           # Chat-specific components (Sidebar, MessageBubble, ChatInput, TypingIndicator)
+    shared/         # Shared components (ExpenseTable, ConfidenceBadge, SourceIcons, ReasoningPanel)
+    dashboard/      # Dashboard components (Phase 3)
+supabase/
+  migrations/       # SQL migration files
+  seed.sql          # Seed data (users, scenarios, policies, dashboard reports, fallbacks)
+docs/               # Code review evaluation, git commands log
 ```
 
 ## Conventions
@@ -44,3 +110,10 @@ src/
 - Workflow enforcement is enabled (`.workflow-enforced`)
 - All work on feature branches, never commit directly to `main` or `develop`
 - Conventional commits required
+
+## Agent Rules
+> Updated at: 2026-03-01 17:20 IST
+- **NEVER use GSD agents** (gsd-executor, gsd-planner, gsd-verifier, gsd-debugger, gsd-codebase-mapper, gsd-roadmapper, etc.) — they inject GSD-specific protocols and context that add unnecessary overhead
+- Use `general-purpose` for code writing, multi-step tasks, and research (it has all tools)
+- Use `Explore` for quick codebase exploration (read-only)
+- Use `haiku` model for simple/fast agent tasks to minimize cost
