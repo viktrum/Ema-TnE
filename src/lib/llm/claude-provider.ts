@@ -7,7 +7,7 @@ import type {
   StreamCallbacks,
 } from './types';
 
-const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 
 export class ClaudeProvider implements LLMProvider {
   private client: Anthropic;

@@ -9,7 +9,7 @@ import type {
 
 const DEFAULT_CONFIG: LLMConfig = {
   provider: 'claude',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-haiku-4-5-20251001',
   temperature: 0,
   maxTokens: 4096,
   timeout: 8000,

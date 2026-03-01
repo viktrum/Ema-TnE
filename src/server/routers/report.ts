@@ -46,6 +46,7 @@ export const reportRouter = router({
         process.env.FALLBACK_MODE === "true" || !isLLMAvailable();
 
       let assemblyOutput: AssemblyOutput;
+      let didFallback = useFallback;
 
       if (useFallback) {
         // Fetch from fallbacks table
@@ -163,13 +164,91 @@ export const reportRouter = router({
           };
         }
       } else {
-        // Pass scenario and policy directly — prompt builder handles flexible shapes
-        const messages = buildAssemblyMessages(scenario, policy);
-        assemblyOutput = await generateStructured(
-          messages,
-          AssemblyOutputSchema,
-          { timeout: 8000, maxTokens: 4096 },
-        );
+        // Live LLM call with auto-fallback on failure
+        try {
+          const messages = buildAssemblyMessages(scenario, policy);
+          assemblyOutput = await generateStructured(
+            messages,
+            AssemblyOutputSchema,
+            { timeout: 30000, maxTokens: 4096 },
+          );
+        } catch (llmError) {
+          console.error("LLM assembly failed, falling back:", llmError);
+          didFallback = true;
+          // Auto-fallback: fetch pre-computed response
+          const { data: fallback } = await ctx.supabase
+            .from("fallbacks")
+            .select("*")
+            .eq("type", "assembly")
+            .eq("scenario_id", input.scenarioId)
+            .single();
+
+          if (!fallback?.response) {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "LLM failed and no fallback available",
+            });
+          }
+
+          // Same transformation as above
+          const raw = fallback.response;
+          if (raw.report) {
+            assemblyOutput = AssemblyOutputSchema.parse(raw);
+          } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const items = (raw.items || []).map((item: any, i: number) => {
+              const isRecategorized = item.status === "re-categorized" && item.re_categorization;
+              const isGap = item.status === "gap_detected";
+              const policyCheck = item.policy_check || {};
+              const recat = item.re_categorization || {};
+              const gap = item.gap_detection || {};
+              let reasoning = "";
+              if (isRecategorized) {
+                reasoning = recat.reason || "";
+                if (recat.evidence?.length) reasoning += " Evidence: " + recat.evidence.join(". ") + ".";
+              } else if (isGap) {
+                reasoning = gap.reason || `Gap detected: ${item.description}`;
+              } else if (policyCheck.applicable_rule) {
+                reasoning = `${policyCheck.applicable_rule}. Amount ₹${item.amount} is ${policyCheck.within_limit ? "within" : "over"} the ₹${policyCheck.limit} limit.`;
+              }
+              return {
+                id: item.id || `EXP-${String(i + 1).padStart(3, "0")}`,
+                description: (item.description || "").replace(/ — .*$/, ""),
+                vendor: (item.description || "").replace(/ — .*$/, ""),
+                date: item.date || "", amount: item.amount || 0, currency: item.currency || "INR",
+                category: item.category || "Miscellaneous",
+                original_category: isRecategorized ? (recat.from || null) : null,
+                confidence: item.confidence || 0, sources: item.sources || [], reasoning,
+                policy_status: isRecategorized ? "within_policy_after_recategorization" : isGap ? "pending_review" : policyCheck.within_limit ? "within_policy" : "exceeds_policy",
+                flag_reason: isRecategorized ? `Re-categorized from ${recat.from} to ${recat.to}.` : isGap ? "Gap detected" : null,
+                recommendation: isRecategorized ? "approve_with_review" : isGap ? "request_employee_input" : item.status === "compliant" ? "auto_approve" : "flag_for_review",
+              };
+            });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const flaggedItems = items.filter((i: any) => i.recommendation === "approve_with_review" || i.recommendation === "flag_for_review");
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const missingItems = (raw.items || []).filter((i: any) => i.status === "gap_detected").map((item: any) => {
+              const gap = item.gap_detection || {};
+              return { id: item.id || "EXP-GAP", detected_gap: gap.reason || item.description || "Gap", estimated_amount: item.amount || 0, currency: item.currency || "INR", evidence: `${gap.from_location || ""} → ${gap.to_location || ""}`, confidence: item.confidence || 67, action_needed: "Confirm amount" };
+            });
+            const summary = raw.summary || {};
+            assemblyOutput = {
+              report: {
+                id: raw.trip_id || `RPT-${Date.now()}`, traveler: raw.traveler?.name || "Unknown",
+                trip_summary: `${raw.trip?.destination || ""}, ${raw.trip?.dates || ""} — ${raw.trip?.purpose || ""}`,
+                total_amount: summary.total_amount || 0, currency: summary.currency || "INR",
+                cost_center: raw.traveler?.cost_center || "", approver: raw.traveler?.approver || "",
+                items, flagged_items: flaggedItems, missing_items: missingItems,
+                summary: {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  total_items: items.length, auto_approve_count: items.filter((i: any) => i.recommendation === "auto_approve").length,
+                  review_count: flaggedItems.length, missing_count: missingItems.length,
+                  total_amount: summary.total_amount || 0, overall_confidence: summary.avg_confidence || 90,
+                },
+              },
+            };
+          }
+        }
       }
 
       const latencyMs = Date.now() - startTime;
@@ -225,7 +304,7 @@ export const reportRouter = router({
       // Log to ai_metrics (correct column names: prompt_type, model)
       await ctx.supabase.from("ai_metrics").insert({
         prompt_type: "assembly",
-        model: useFallback ? "fallback" : "claude-sonnet-4-20250514",
+        model: useFallback ? "fallback" : "claude-haiku-4-5-20251001",
         latency_ms: latencyMs,
         tokens_in: 0,
         tokens_out: 0,
@@ -233,7 +312,7 @@ export const reportRouter = router({
         fallback_used: useFallback,
       });
 
-      return assemblyOutput;
+      return { ...assemblyOutput, _fallback: didFallback };
     }),
 
   getByScenario: protectedProcedure

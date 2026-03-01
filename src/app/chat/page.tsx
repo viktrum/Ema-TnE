@@ -34,6 +34,7 @@ export default function ChatPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [isAssembling, setIsAssembling] = useState(true);
   const [firstMessageId, setFirstMessageId] = useState<string | null>(null);
+  const [usedFallback, setUsedFallback] = useState(false);
 
   const {
     messages,
@@ -107,6 +108,7 @@ export default function ChatPage() {
         if (cancelled) return;
 
         const assembledReport = result.report;
+        if (result._fallback) setUsedFallback(true);
         setReport(assembledReport);
 
         // Build the initial AI message with expense table HTML and gap question
@@ -222,7 +224,7 @@ export default function ChatPage() {
                 appendToStream(event.content);
                 fullContent += event.content;
               } else if (event.type === 'done') {
-                // Parse actions from the full response
+                if (event.fallback) setUsedFallback(true);
                 parseAndApplyActions(event.content, fullContent);
               } else if (event.type === 'error') {
                 toast.error(event.content || 'An error occurred.');
@@ -343,8 +345,15 @@ export default function ChatPage() {
       {/* Main chat area */}
       <div className="ml-[240px] flex flex-1 flex-col">
         {/* Header */}
-        <div className="flex h-12 shrink-0 items-center border-b border-gray-200 bg-white px-4">
+        <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
           <span className="text-sm font-medium text-gray-500"># expense-reports</span>
+          {process.env.NODE_ENV === 'development' && !isAssembling && report && (
+            <span className={`rounded px-2 py-0.5 text-[10px] font-mono ${
+              usedFallback ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+            }`}>
+              {usedFallback ? 'FALLBACK' : 'LIVE LLM'}
+            </span>
+          )}
         </div>
 
         {/* Message scroll area */}

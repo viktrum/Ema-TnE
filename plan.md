@@ -31,5 +31,18 @@ Phases:
 ## 2026-03-01 19:15 IST — Phase 2 In Progress
 **Branch:** feature/phase-2-chat-ui
 **PR:** #2 (https://github.com/viktrum/Ema-TnE/pull/2)
-**Status:** Components built, build passes. CodeRabbit CLI reviewed. Internal review pending.
+**Status:** Components built, multiple fixes applied. Running UAT Gate 2 checks.
 **Key deliverables:** Chat sidebar, message bubbles, expense table, confidence badges, source icons, reasoning panel (dinner pre-expanded), Zustand stores, chat page with SSE streaming.
+**Bugs found & fixed:**
+- ConfidenceBadge assumed 0-1 scale (spec uses 0-100)
+- Fallback data shape didn't match AssemblyOutputSchema (flat vs nested)
+- Reasoning showed [object Object] — now built as strings from structured fields
+- Duplicate reasoning blocks (flagged + re-categorized) — consolidated to single block
+- Duplicate Vendor column removed, proper policy_status matching
+
+**Deferred to Phase 5 (Polish):**
+- Chat message UI/UX redesign — current messages are functional but not polished
+- Use `frontend-design` skill for pixel-perfect chat bubble layout
+- Better visual hierarchy: message → table → reasoning → gap question
+- Streaming animation, typing indicator refinement
+- Mobile responsiveness
