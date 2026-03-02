@@ -611,6 +611,30 @@ INSERT INTO dashboard_reports (scenario_id, traveler_name, traveler_role, travel
  '["Currency Exchange", "RBI Reference Rates", "Policy"]'
 );
 
+-- 10. Rohit Patel & Deepa Sharma — Cross-Employee Duplicate (DEMO CLIMAX)
+INSERT INTO dashboard_reports (scenario_id, traveler_name, traveler_role, traveler_initials, destination, dates, total_amount, currency, item_count, avg_confidence, status, flag_reason, flag_severity, items, reasoning, sources) VALUES
+(NULL, 'Rohit Patel', 'Business Development Lead', 'RP', 'Mumbai', 'Feb 25-26, 2026', 12400, 'INR', 1, 97, 'flagged', 'Cross-Employee Duplicate: Identical ₹12,400 dinner at Spice Route submitted by both Rohit Patel and Deepa Sharma from the same calendar event', 'HIGH',
+ '[{"id":"TXN-RP-01","description":"Team dinner at Spice Route (8 pax)","amount":12400,"category":"Client Entertainment","duplicate_submitter":"Deepa Sharma","event_date":"2026-02-25"}]',
+ '{"summary":"Both Rohit Patel and Deepa Sharma submitted ₹12,400 for dinner at Spice Route on Feb 25. Calendar shows a single event: \"Team Dinner — Spice Route\" with both as attendees. HR Org Chart confirms they report to different managers, so neither manager would see the other''s claim. Only cross-employee analysis catches this.","ai_reasoning":"Identical merchant, identical amount, same date. Calendar event cross-reference shows single dinner with both employees listed. HR Org Chart reveals different reporting lines — standard single-manager approval would miss this entirely."}',
+ '["Transaction History", "Calendar", "HR Org Chart"]'
+);
+
+-- 11. Kavita Deshmukh — Phantom Client Dinner (Downward Re-categorization)
+INSERT INTO dashboard_reports (scenario_id, traveler_name, traveler_role, traveler_initials, destination, dates, total_amount, currency, item_count, avg_confidence, status, flag_reason, flag_severity, items, reasoning, sources) VALUES
+(NULL, 'Kavita Deshmukh', 'Sales Manager', 'KD', 'Pune', 'Feb 12-13, 2026', 11000, 'INR', 1, 91, 'flagged', 'Phantom Client Dinner: ₹11,000 coded as "Client Entertainment" but all 4 attendees are internal @nexgen.com employees — re-classified to Internal Team Meal', 'MEDIUM',
+ '[{"id":"TXN-KD-01","description":"Dinner at Malaka Spice — 4 attendees","amount":11000,"original_category":"Client Entertainment","suggested_category":"Internal Team Meal","confidence":91,"attendees":["kavita@nexgen.com","amit@nexgen.com","sneha@nexgen.com","ravi@nexgen.com"]}]',
+ '{"summary":"Kavita coded ₹11,000 dinner at Malaka Spice as Client Entertainment. CRM shows no client meetings on Feb 12. All 4 attendees in the calendar event are @nexgen.com internal employees. Re-classified from Client Entertainment (₹15,000 limit) to Internal Team Meal (₹2,000/person limit). At ₹2,750/person, this exceeds the internal meal cap by ₹750/head — ₹3,000 total overage.","ai_reasoning":"Checked attendee list against CRM contacts — zero external matches. All four emails are @nexgen.com domain. Client Entertainment category requires at least one external attendee per policy section 4.2. Downward re-categorization to Internal Team Meal, which triggers per-person limit check."}',
+ '["CRM", "Calendar", "Email", "Policy"]'
+);
+
+-- 12. Arjun Rao — Conference Meal Overlap (Per Diem + Provided Meals)
+INSERT INTO dashboard_reports (scenario_id, traveler_name, traveler_role, traveler_initials, destination, dates, total_amount, currency, item_count, avg_confidence, status, flag_reason, flag_severity, items, reasoning, sources) VALUES
+(NULL, 'Arjun Rao', 'Technical Lead', 'AR', 'Bangalore', 'Feb 20-22, 2026', 4500, 'INR', 3, 88, 'flagged', 'Conference Meal Overlap: Per diem claimed on 3 conference days, but agenda shows lunch provided on Days 1 and 3 — only Day 2 eligible', 'MEDIUM',
+ '[{"id":"TXN-AR-01","description":"Per diem Day 1 (TechSummit)","amount":1500,"category":"Meals Per Diem","date":"2026-02-20","lunch_provided":true,"eligible":false},{"id":"TXN-AR-02","description":"Per diem Day 2 (TechSummit)","amount":1500,"category":"Meals Per Diem","date":"2026-02-21","lunch_provided":false,"eligible":true},{"id":"TXN-AR-03","description":"Per diem Day 3 (TechSummit)","amount":1500,"category":"Meals Per Diem","date":"2026-02-22","lunch_provided":true,"eligible":false}]',
+ '{"summary":"Arjun claimed ₹1,500/day per diem for all 3 days of TechSummit Bangalore. Conference registration email confirms lunch included on Day 1 (Feb 20) and Day 3 (Feb 22). Day 2 had no provided meals. Per policy section 6.1, per diem is reduced when meals are provided by the event. Days 1 and 3 flagged — ₹3,000 ineligible.","ai_reasoning":"Matched conference registration email to calendar event ''TechSummit Bangalore 2026''. Extracted agenda PDF attachment showing ''Lunch: 12:30-13:30'' on Day 1 and Day 3 schedules. Day 2 agenda shows ''Lunch: On your own''. Policy section 6.1 requires per diem reduction when event provides meals."}',
+ '["Calendar", "Conference Agenda", "Email", "Policy"]'
+);
+
 -- ============================================================================
 -- 6. DASHBOARD REPORTS — 38 Auto-Approved
 -- ============================================================================

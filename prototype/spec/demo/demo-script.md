@@ -133,17 +133,63 @@ The demo is a story in three acts: (1) the employee experience, (2) the hero mom
 
 ---
 
-### Step 6: Switch to Dashboard — "The Business Case" (30 seconds)
+### Step 6: Switch to Dashboard — "The Business Case" (90 seconds)
 
 **Enhanced with Phase 3.5 (if bidirectional realtime is built):** Instead of navigating to `/dashboard`, have Mihir's dashboard already open in a second browser tab (side-by-side or picture-in-picture). When Tanya submits in Step 5, point to the dashboard tab — Tanya's report has ALREADY appeared in Mihir's inbox without any manual refresh. This is the most powerful demo moment: "She submitted two seconds ago, and it's already here." Then continue with the regular narration below.
 
 | Element | Detail |
 |---------|--------|
-| **Action** | Click the Dashboard tab (or point to the already-open dashboard where Tanya's report appeared via realtime). The hero banner loads: "4 hours" in large type — time from trip-end to submitted report. Below it: 3-panel layout. Left: auto-approved (38 reports, green). Center: flagged for review (9 reports, yellow). Right: CHRO health metrics. |
-| **Narration** | "Now here's what Mihir — the manager — sees." *(If realtime: "She submitted two seconds ago — it's already here.")* *(Point to hero banner)* "The number that matters: four hours from trip-end to submitted report. Industry average is eight days." *(Pause. Let the comparison register.)* "Eighty-one percent of reports auto-approved. No manager time spent. Tanya's dinner is the one item routed for Mihir's judgment. And it comes with the full reasoning chain attached." |
+| **Action** | Click the Dashboard tab (or point to the already-open dashboard where Tanya's report appeared via realtime). The hero banner loads: "4 hours" in large type — time from trip-end to submitted report. Below it: 3-panel layout. Left: auto-approved (38 reports, green). Center: flagged for review (9 reports, yellow). Right: CHRO health metrics. Then scroll through the flagged panel to highlight the four flagged items: Tanya's dinner, Phantom Client Dinner, Conference Meal Overlap, and Cross-Employee Duplicate. |
+| **Narration** | See detailed script below. |
 | **Panel State** | Seeing the business case. The shift from employee experience to manager/CHRO value is intentional — this is where Surojit (CEO) and Nilesh (Head of Product) evaluate whether this sells to a CHRO. |
-| **Timing** | 30 seconds. |
-| **Pacing Note** | Point to the North Star metric FIRST. Do not start with the panels. The hero number needs to land before the detail. When you say "eight days," look at the panel — this is a number they can verify (GBTA data). When you say "eighty-one percent auto-approved," point to the green panel and its count. |
+| **Timing** | 90 seconds. |
+| **Pacing Note** | Point to the North Star metric FIRST. Do not start with the panels. The hero number needs to land before the detail. Build narrative tension through the dashboard flags. Escalate from simple (familiar flag from Step 3) → downward re-categorization (re-use case) → cross-system validation (LLM power) → climax (cross-employee detection, the thing no manager could see). Pause after each flag to let the implication register. |
+
+**Word-for-word narration (rehearse this exact sequence):**
+
+> "Now here's what Mihir — the manager — sees."
+
+*(If realtime: "She submitted two seconds ago — it's already here.")*
+
+*(Point to hero banner)*
+
+> "The number that matters: four hours from trip-end to submitted report. Industry average is eight days."
+
+*(Pause 2 seconds. Let the comparison register.)*
+
+> "Eighty-one percent of reports auto-approved. No manager time spent. But the flagged center panel — that's where it gets interesting."
+
+*(Point to the flagged panel. Scroll to show the four flagged items.)*
+
+> "Let me walk through these four flags. First — Tanya's dinner from the chat. Tanya's expense, Tanya's judgment needed."
+
+*(Point to Tanya's dinner item, then scroll to the next flag.)*
+
+> "But look at this one. Phantom Client Dinner — Kavita submitted ₹11,000 for client entertainment. All attendees? Internal. Every single one: @nexgen.com. The AI re-classified this down to an internal team meal. Same reasoning as Tanya's dinner — cross-system — but opposite direction. It catches gaming, not just helps genuine cases."
+
+*(Pause. Let the implication land: the tool polices both ways.)*
+
+> "Third flag. Conference Meal Overlap. Arjun attended a three-day conference. Per diem on all three days. But the conference agenda email showed lunch was provided on Days 1 and 3. Only Day 2 is eligible. The AI cross-referenced the conference email to find provided meals."
+
+*(Pause. Slower pace.)*
+
+> "Three different types of judgment. Three different data sources. All automated. But here's the one that sells this."
+
+*(Pause. Take a breath. This is the climax.)*
+
+*(Scroll to the Cross-Employee Duplicate flag.)*
+
+> "Cross-Employee Duplicate. Rohit Patel and Deepa Sharma both submitted ₹12,400 for the same dinner at Spice Route. Same restaurant, same date, same transaction. Rohit submitted it from the calendar event, Deepa submitted from the card feed. The system detected they both claimed the same meal."
+
+*(Full stop. Let silence sit for 3 seconds.)*
+
+> "No expense tool on the market detects this. Why? Because each manager sees only their own employee. A manager reviews Rohit's report — it looks fine. A different manager reviews Deepa's report — it also looks fine. They never talk. The receipt appears twice. Policy violation buried."
+
+*(Lean back. Slower pace.)*
+
+> "Ema sees across employees. Sees across managers. Flags the conflict. Only one person can claim this meal. This is the thing no manager could see individually."
+
+*(Pause 2 seconds.)*
 
 ---
 

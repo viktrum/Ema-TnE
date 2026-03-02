@@ -44,3 +44,4 @@ session-summary.md
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+evals/.env

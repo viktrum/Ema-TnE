@@ -49,6 +49,7 @@ export default function ChatInput({
           onKeyDown={handleKeyDown}
           placeholder="Type a message..."
           disabled={disabled}
+          maxLength={500}
           className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-[#1F8844] focus:ring-1 focus:ring-[#1F8844] disabled:cursor-not-allowed disabled:opacity-50"
         />
         <button
@@ -61,11 +62,18 @@ export default function ChatInput({
         </button>
       </div>
 
-      {demoResponse && (
-        <p className="mt-1 text-[11px] text-gray-400">
-          Press <kbd className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[10px]">Ctrl+D</kbd> to load demo message
-        </p>
-      )}
+      <div className="mt-1 flex items-center justify-between">
+        {demoResponse ? (
+          <p className="text-[11px] text-gray-400">
+            Press <kbd className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[10px]">Ctrl+D</kbd> to load demo message
+          </p>
+        ) : <span />}
+        {value.length >= 400 && (
+          <span className={`text-[11px] ${value.length >= 490 ? 'text-red-500' : 'text-gray-400'}`}>
+            {value.length}/500
+          </span>
+        )}
+      </div>
     </div>
   );
 }
