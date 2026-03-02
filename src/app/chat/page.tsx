@@ -330,8 +330,9 @@ export default function ChatPage() {
         if (parsed?.actions && Array.isArray(parsed.actions)) {
           for (const action of parsed.actions) {
             if (action.type === 'update_amount' && action.item_id) {
+              const rawAmount = String(action.new_value).replace(/[^0-9.]/g, '');
               updateExpenseItem(action.item_id, {
-                amount: Number(action.new_value),
+                amount: Number(rawAmount) || 0,
               });
               updateReportTotal();
             } else if (action.type === 'update_category' && action.item_id) {
