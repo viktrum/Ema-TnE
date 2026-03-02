@@ -74,7 +74,7 @@ Evaluating CodeRabbit and Greptile as AI code review tools. Using this repo's PR
 - **Package Manager:** npm
 
 ## Directory Structure
-> Updated at: 2026-03-02 04:50 IST
+> Updated at: 2026-03-02 08:30 IST
 ```
 src/
   app/              # Next.js App Router pages and layouts
@@ -104,6 +104,7 @@ supabase/
   migrations/       # SQL migration files
   seed.sql          # Seed data (users, scenarios, policies, dashboard reports, fallbacks)
 evals/              # Promptfoo eval suite (prompt testing, mock context, config)
+scripts/            # Utility scripts (pre-demo-check.js — automated health checks before demo)
 docs/               # Code review evaluation, git commands log
 ```
 

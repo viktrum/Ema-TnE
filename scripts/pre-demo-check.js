@@ -94,10 +94,12 @@ async function runChecks() {
     fail('Health returned error', `HTTP ${health.status}`);
   }
 
-  if (health.latencyMs < 500) {
-    pass('Health latency <500ms', `${health.latencyMs}ms`);
-  } else {
-    warn('Health latency >=500ms', `${health.latencyMs}ms (target: <500ms)`);
+  if (health.status !== 0) {
+    if (health.latencyMs < 500) {
+      pass('Health latency <500ms', `${health.latencyMs}ms`);
+    } else {
+      warn('Health latency >=500ms', `${health.latencyMs}ms (target: <500ms)`);
+    }
   }
 
   // CHECK 2: Chat route availability (expects 401 without auth)
@@ -121,9 +123,9 @@ async function runChecks() {
       `HTTP ${chatProbe.status}`
     );
   } else {
-    warn(
-      'Chat route returned unexpected status',
-      `HTTP ${chatProbe.status} — verify manually`
+    fail(
+      'Chat route returned unexpected status — check auth middleware',
+      `HTTP ${chatProbe.status}`
     );
   }
 
@@ -144,9 +146,27 @@ async function runChecks() {
     );
   }
 
-  // CHECK 4: Fallback mode status
+  // CHECK 4: Fallback mode status (read from .env.local since Node doesn't auto-load it)
   console.log(bold('\n4. Environment'));
-  const fallbackMode = process.env.FALLBACK_MODE;
+  let fallbackMode = process.env.FALLBACK_MODE;
+  let apiKeySet = !!process.env.ANTHROPIC_API_KEY;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const envPath = path.resolve(__dirname, '..', '.env.local');
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+      const [key, ...rest] = trimmed.split('=');
+      const val = rest.join('=').trim();
+      if (key.trim() === 'FALLBACK_MODE') fallbackMode = val;
+      if (key.trim() === 'ANTHROPIC_API_KEY' && val) apiKeySet = true;
+    }
+  } catch {
+    warn('Could not read .env.local', 'FALLBACK_MODE and API key checks may be inaccurate');
+  }
+
   if (!fallbackMode || fallbackMode === 'false') {
     pass('FALLBACK_MODE is off — live LLM mode');
   } else {
@@ -154,6 +174,11 @@ async function runChecks() {
       'FALLBACK_MODE=true — demo will use pre-computed responses',
       'Set to false for live AI demo'
     );
+  }
+  if (apiKeySet) {
+    pass('ANTHROPIC_API_KEY is set');
+  } else {
+    fail('ANTHROPIC_API_KEY is not set', 'LLM calls will fail — check .env.local');
   }
 
   // SUMMARY
