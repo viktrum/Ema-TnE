@@ -2,7 +2,7 @@
 # Run: cd evals && promptfoo eval
 # View: promptfoo view
 
-description: 'Ema Chat Prompt — Phase 3.8 Hardening Evals'
+description: 'Ema Chat Prompt — Phase 6 Demo Readiness Evals'
 
 # Load API key from gitignored local .env (copied from ../.env.local)
 dotenv: .env
@@ -96,3 +96,77 @@ tests:
     assert:
       - type: llm-rubric
         value: 'Response acknowledges the new expense and either asks for missing details (date, vendor) before adding it, or confirms the addition with an add_item action.'
+
+  # ===== PHASE 6 EVALS (2026-03-02) =====
+  # E8-E12: Demo readiness evals. E8 MUST PASS — it validates the hero moment.
+
+  # E8: Dinner categorization — MUST PASS for demo hero moment
+  - vars:
+      user_message: "Why was the Trishna dinner categorized as Client Entertainment?"
+    assert:
+      - type: llm-rubric
+        value: 'Response correctly explains the dinner re-categorization from Restaurants to Client Entertainment. It must cite the calendar event (client dinner with Vikram Mehta), the CRM context (Reliance deal), and the policy (client entertainment limit of ₹15,000). All three sources must be mentioned.'
+      - type: javascript
+        value: |
+          let r;
+          try {
+            const clean = output.replace(/^```json\n?/, '').replace(/\n?```$/, '');
+            r = (JSON.parse(clean).response || output).toLowerCase();
+          } catch { r = output.toLowerCase(); }
+          const hasCalendar = r.includes('calendar') || r.includes('client dinner') || r.includes('vikram');
+          const hasCRM = r.includes('crm') || r.includes('reliance') || r.includes('deal');
+          const hasPolicy = r.includes('policy') || r.includes('15,000') || r.includes('15000') || r.includes('entertainment limit');
+          return hasCalendar && hasCRM && hasPolicy;
+
+  # E9: Reasoning quality — all three source systems mentioned
+  - vars:
+      user_message: "Can you explain the reasoning behind the dinner classification in more detail?"
+    assert:
+      - type: llm-rubric
+        value: 'Response mentions all three source systems that informed the dinner categorization: (1) calendar showing the client meeting/dinner event, (2) CRM confirming the Reliance deal or Vikram Mehta context, and (3) policy limits distinguishing the client entertainment limit from the meal limit. Should feel like a colleague explaining cross-system reasoning.'
+      - type: javascript
+        value: |
+          let r;
+          try {
+            const clean = output.replace(/^```json\n?/, '').replace(/\n?```$/, '');
+            r = (JSON.parse(clean).response || output).toLowerCase();
+          } catch { r = output.toLowerCase(); }
+          const hasCalendar = r.includes('calendar') || r.includes('event') || r.includes('vikram') || r.includes('client dinner');
+          const hasCRM = r.includes('crm') || r.includes('reliance') || r.includes('deal') || r.includes('2 cr');
+          const hasPolicy = r.includes('policy') || r.includes('15,000') || r.includes('15000') || r.includes('entertainment');
+          return hasCalendar && hasCRM && hasPolicy;
+
+  # E10: Novel input — add a different expense
+  - vars:
+      user_message: "I also had a ₹450 auto-rickshaw to the client meeting"
+    assert:
+      - type: llm-rubric
+        value: 'Response handles the new expense addition. It should acknowledge the ₹450 auto-rickshaw and either ask for missing details (date, vendor) or confirm it can be added as a Transportation expense. Should mention a category name and indicate whether it is within policy.'
+      - type: not-contains
+        value: "don't understand"
+      - type: not-contains
+        value: "cannot help"
+
+  # E11: Novel input — policy question about hotel limits
+  - vars:
+      user_message: "What's the hotel limit if I stay at a Tier 1 city?"
+    assert:
+      - type: llm-rubric
+        value: 'Response answers the policy question about hotel limits. It should cite the Tier 1 hotel limit of ₹12,000 from the policy context. It must NOT make up numbers or refuse to answer.'
+      - type: javascript
+        value: |
+          let r;
+          try {
+            const clean = output.replace(/^```json\n?/, '').replace(/\n?```$/, '');
+            r = (JSON.parse(clean).response || output).toLowerCase();
+          } catch { r = output.toLowerCase(); }
+          return r.includes('12,000') || r.includes('12000');
+
+  # E12: Novel input — post-submit process question
+  - vars:
+      user_message: "What happens after I submit the report? How long until I get reimbursed?"
+    assert:
+      - type: llm-rubric
+        value: 'Response explains the next step after submission: report goes to the manager for review. It should not refuse to answer. A good response acknowledges the question and explains the routing.'
+      - type: not-contains
+        value: "I don't know"
