@@ -10,6 +10,7 @@ import MessageBubble from '@/components/chat/MessageBubble';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import { toast } from 'sonner';
+import { extractChatResponse } from '@/lib/utils/parseLLMResponse';
 
 interface SidebarUser {
   name: string;
@@ -280,22 +281,12 @@ export default function ChatPage() {
                 const finalContent = event.content || fullContent;
 
                 // Try to parse as JSON and extract the response text
-                // Strip markdown code fences if LLM wrapped JSON in ```json ... ```
-                const cleanedContent = finalContent
-                  .replace(/^[\s]*```(?:json)?\s*/i, '')
-                  .replace(/\s*```[\s]*$/, '')
-                  .trim();
+                const { response: extractedResponse, parsed: extractedParsed } = extractChatResponse(finalContent);
                 let displayContent: string | null = null;
-                try {
-                  const parsed = JSON.parse(cleanedContent);
-                  if (parsed?.response) {
-                    displayContent = parsed.response;
-                  }
-                  parseAndApplyActions(finalContent, fullContent);
-                } catch {
-                  // Not valid JSON — fall through
-                  parseAndApplyActions(finalContent, fullContent);
+                if (extractedParsed?.response) {
+                  displayContent = extractedResponse;
                 }
+                parseAndApplyActions(finalContent, fullContent);
 
                 if (displayContent) {
                   // JSON response: replace whatever is in the message with
@@ -334,22 +325,7 @@ export default function ChatPage() {
   const parseAndApplyActions = useCallback(
     (fullResponse: string, streamedContent: string) => {
       try {
-        // Strip markdown code fences if present
-        const cleaned = fullResponse
-          .replace(/^[\s]*```(?:json)?\s*/i, '')
-          .replace(/\s*```[\s]*$/, '')
-          .trim();
-        // Try parsing the full response as JSON (LLM sometimes returns structured data)
-        const parsed =
-          typeof cleaned === 'string'
-            ? (() => {
-                try {
-                  return JSON.parse(cleaned);
-                } catch {
-                  return null;
-                }
-              })()
-            : null;
+        const { parsed } = extractChatResponse(fullResponse);
 
         if (parsed?.actions && Array.isArray(parsed.actions)) {
           for (const action of parsed.actions) {
@@ -358,6 +334,40 @@ export default function ChatPage() {
                 amount: Number(action.new_value),
               });
               updateReportTotal();
+            } else if (action.type === 'update_category' && action.item_id) {
+              updateExpenseItem(action.item_id, {
+                category: action.new_value,
+              });
+            } else if (action.type === 'remove_item' && action.item_id) {
+              const currentReport = useChatStore.getState().report;
+              if (currentReport) {
+                const filtered = currentReport.items.filter((i) => i.id !== action.item_id);
+                setReport({ ...currentReport, items: filtered });
+                updateReportTotal();
+              }
+            } else if (action.type === 'add_item' && action.new_value) {
+              const currentReport = useChatStore.getState().report;
+              if (currentReport) {
+                const val = typeof action.new_value === 'object' ? action.new_value : {};
+                const newItem = {
+                  id: `TXN-NEW-${Date.now()}`,
+                  description: String(val.description || action.new_value),
+                  vendor: String(val.vendor || 'Unknown'),
+                  date: String(val.date || ''),
+                  amount: Number(val.amount || 0),
+                  currency: 'INR',
+                  category: String(val.category || 'Uncategorized'),
+                  original_category: null,
+                  confidence: 85,
+                  sources: ['Employee'] as string[],
+                  reasoning: 'Added by employee during chat review',
+                  policy_status: 'pending_review' as const,
+                  flag_reason: null,
+                  recommendation: 'auto_approve' as const,
+                };
+                setReport({ ...currentReport, items: [...currentReport.items, newItem] });
+                updateReportTotal();
+              }
             }
           }
         }

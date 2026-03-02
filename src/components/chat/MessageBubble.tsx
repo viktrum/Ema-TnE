@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import DOMPurify from 'isomorphic-dompurify';
 
 interface Message {
   id: string;
@@ -48,7 +49,7 @@ export default function MessageBubble({
           <div className="rounded-lg bg-[#F3F4F6] px-4 py-3">
             <div
               className="prose prose-sm max-w-none text-gray-800 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-100 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left"
-              dangerouslySetInnerHTML={{ __html: message.content }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(message.content) }}
             />
           </div>
 

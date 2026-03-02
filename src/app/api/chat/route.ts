@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { streamLLM, isLLMAvailable } from "@/lib/llm/client";
 import { buildChatMessages } from "@/lib/llm/prompts/chat";
+import { extractChatResponse } from "@/lib/utils/parseLLMResponse";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export async function POST(req: NextRequest) {
@@ -19,6 +20,10 @@ export async function POST(req: NextRequest) {
 
   if (!message || !scenarioId) {
     return new Response("Missing required fields: message, scenarioId", { status: 400 });
+  }
+
+  if (typeof message === 'string' && message.length > 2000) {
+    return new Response("Message too long", { status: 400 });
   }
 
   // Save user message to chat_messages
@@ -43,12 +48,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Fetch scenario context server-side (don't trust client-sent data)
+  let scenarioContext: unknown = null;
+  const { data: scenarioData } = await supabase
+    .from("scenarios")
+    .select("context")
+    .eq("id", scenarioId)
+    .single();
+  if (scenarioData?.context) {
+    scenarioContext = scenarioData.context;
+  }
+
   // Build messages for LLM
   const messages = buildChatMessages(
     report,
     history || [],
     message,
-    body.scenarioContext
+    scenarioContext
   );
 
   // Create SSE stream
@@ -77,15 +93,8 @@ export async function POST(req: NextRequest) {
             controller.close();
 
             // Save assistant message — extract readable text if LLM returned JSON
-            let saveContent = fullResponse;
-            try {
-              const cleaned = fullResponse
-                .replace(/^[\s]*```(?:json)?\s*/i, '')
-                .replace(/\s*```[\s]*$/, '')
-                .trim();
-              const parsed = JSON.parse(cleaned);
-              if (parsed?.response) saveContent = parsed.response;
-            } catch { /* not JSON, save as-is */ }
+            const { response: extractedText, parsed } = extractChatResponse(fullResponse);
+            const saveContent = parsed ? extractedText : fullResponse;
 
             await supabase.from("chat_messages").insert({
               user_id: user.id,
@@ -140,15 +149,15 @@ async function handleFallback(
   }
 
   if (!fallbackData) {
-    // Universal fallback
+    // Universal fallback — scenario-neutral (fires for any scenario with no DB match)
     fallbackData = {
-      text: "Let me focus on your expense report. Everything looks good with the items I've assembled. Would you like to review the details or submit?",
+      text: "Let me focus on your expense report. I still need to confirm a few items before we can submit. Let me check what's pending.",
       response: {
         response:
-          "Let me focus on your expense report. Everything looks good with the items I've assembled. Would you like to review the details or submit?",
+          "Let me focus on your expense report. I still need to confirm a few items before we can submit. Let me check what's pending.",
         actions: [],
         report_updated: false,
-        show_submit_button: true,
+        show_submit_button: false,
         needs_categorization: false,
       },
     };

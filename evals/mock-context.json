@@ -1,0 +1,132 @@
+{
+  "report": {
+    "id": "RPT-EVAL-001",
+    "traveler": "Tanya Sharma",
+    "trip_summary": "Mumbai business trip, Feb 24-26",
+    "total_amount": 24850,
+    "items": [
+      {
+        "id": "TXN-001",
+        "description": "Flight BOM-DEL IndiGo 6E-204",
+        "vendor": "IndiGo",
+        "date": "2026-02-24",
+        "amount": 5200,
+        "currency": "INR",
+        "category": "Airlines",
+        "original_category": null,
+        "confidence": 98,
+        "sources": ["Booking System", "Email"],
+        "reasoning": "Direct match with IndiGo booking confirmation email",
+        "policy_status": "within_policy",
+        "flag_reason": null,
+        "recommendation": "auto_approve"
+      },
+      {
+        "id": "TXN-002",
+        "description": "Hotel Trident BKC (2 nights)",
+        "vendor": "Trident Hotels",
+        "date": "2026-02-24",
+        "amount": 9600,
+        "currency": "INR",
+        "category": "Hotels",
+        "original_category": null,
+        "confidence": 96,
+        "sources": ["Booking System"],
+        "reasoning": "Matched with Trident BKC reservation, within Mumbai Tier 1 limit",
+        "policy_status": "within_policy",
+        "flag_reason": null,
+        "recommendation": "auto_approve"
+      },
+      {
+        "id": "TXN-003",
+        "description": "Taxi Airport to Hotel",
+        "vendor": "Unknown",
+        "date": "2026-02-24",
+        "amount": 1200,
+        "currency": "INR",
+        "category": "Transportation",
+        "original_category": null,
+        "confidence": 45,
+        "sources": ["Calendar"],
+        "reasoning": "Calendar shows arrival at 14:00, no Uber/Ola receipt found. Amount estimated from airport-BKC route average.",
+        "policy_status": "pending_review",
+        "flag_reason": "No receipt, amount estimated",
+        "recommendation": "request_employee_input"
+      },
+      {
+        "id": "TXN-004",
+        "description": "Dinner at Trishna",
+        "vendor": "Trishna Restaurant",
+        "date": "2026-02-25",
+        "amount": 8500,
+        "currency": "INR",
+        "category": "Client Entertainment",
+        "original_category": "Restaurants",
+        "confidence": 94,
+        "sources": ["Calendar", "CRM", "Policy"],
+        "reasoning": "Calendar shows client dinner with Vikram Mehta (Reliance VP Procurement). CRM confirms active deal RLN-2026-Q1 worth ₹2Cr. Re-categorized from Restaurants to Client Entertainment.",
+        "policy_status": "within_policy_after_recategorization",
+        "flag_reason": "Re-categorized: Restaurants → Client Entertainment",
+        "recommendation": "approve_with_review"
+      }
+    ],
+    "flagged_items": [
+      {
+        "id": "TXN-004",
+        "description": "Dinner at Trishna",
+        "vendor": "Trishna Restaurant",
+        "date": "2026-02-25",
+        "amount": 8500,
+        "currency": "INR",
+        "category": "Client Entertainment",
+        "original_category": "Restaurants",
+        "confidence": 94,
+        "sources": ["Calendar", "CRM", "Policy"],
+        "reasoning": "Calendar shows client dinner with Vikram Mehta (Reliance VP Procurement). CRM confirms active deal RLN-2026-Q1 worth ₹2Cr. Re-categorized from Restaurants to Client Entertainment.",
+        "policy_status": "within_policy_after_recategorization",
+        "flag_reason": "Re-categorized: Restaurants → Client Entertainment",
+        "recommendation": "approve_with_review"
+      }
+    ],
+    "missing_items": [
+      {
+        "id": "GAP-001",
+        "detected_gap": "Taxi receipt missing — calendar shows arrival at BOM airport at 14:00 but no ride-hailing receipt found",
+        "estimated_amount": 1200,
+        "action_needed": "Please confirm the taxi fare and whether you have a receipt.",
+        "confidence": 45
+      }
+    ],
+    "summary": {
+      "total_items": 4,
+      "auto_approve_count": 2,
+      "review_count": 1,
+      "missing_count": 1,
+      "total_amount": 24850,
+      "overall_confidence": 83
+    }
+  },
+  "scenario_context": {
+    "calendar": [
+      {"date": "2026-02-24", "time": "14:00", "event": "Arrive BOM T2"},
+      {"date": "2026-02-25", "time": "10:00", "event": "Client Meeting - Reliance Industries, BKC"},
+      {"date": "2026-02-25", "time": "19:00", "event": "Client Dinner - Vikram Mehta, Reliance VP Procurement at Trishna Restaurant"},
+      {"date": "2026-02-26", "time": "11:00", "event": "Depart BOM"}
+    ],
+    "crm": {
+      "contact": "Vikram Mehta",
+      "company": "Reliance Industries",
+      "role": "VP Procurement",
+      "deal": "RLN-2026-Q1",
+      "deal_value": "₹2Cr",
+      "stage": "Negotiation"
+    },
+    "policy": {
+      "hotel_limit_tier1": 12000,
+      "meal_limit_per_day": 2500,
+      "client_entertainment_limit": 15000,
+      "receipt_required_above": 500,
+      "flight_class": "economy_for_under_6hrs"
+    }
+  }
+}

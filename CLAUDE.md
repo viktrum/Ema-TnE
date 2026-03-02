@@ -74,7 +74,7 @@ Evaluating CodeRabbit and Greptile as AI code review tools. Using this repo's PR
 - **Package Manager:** npm
 
 ## Directory Structure
-> Updated at: 2026-03-01 19:30 IST
+> Updated at: 2026-03-02 04:50 IST
 ```
 src/
   app/              # Next.js App Router pages and layouts
@@ -88,6 +88,7 @@ src/
     trpc/           # tRPC client, server caller, and React provider
     llm/            # LLM client wrapper, Claude provider, prompts
     engine/         # Deterministic assembly engine (assembler, types)
+    utils/          # Shared utilities (parseLLMResponse — fence-stripping, JSON extraction)
     utils.ts        # shadcn/ui utility (cn function)
   server/
     trpc/           # tRPC initialization (router, procedures, context with auth)
@@ -102,6 +103,7 @@ src/
 supabase/
   migrations/       # SQL migration files
   seed.sql          # Seed data (users, scenarios, policies, dashboard reports, fallbacks)
+evals/              # Promptfoo eval suite (prompt testing, mock context, config)
 docs/               # Code review evaluation, git commands log
 ```
 
