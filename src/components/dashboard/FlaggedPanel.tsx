@@ -6,6 +6,7 @@ import { TierSection } from './TierSection';
 import { FlaggedCardDecision } from './FlaggedCardDecision';
 import { FlaggedCardReview } from './FlaggedCardReview';
 import { FlaggedCardAutoHandled } from './FlaggedCardAutoHandled';
+import type { AiRecommendation } from '@/lib/llm/prompts/dashboard-recommendations';
 
 interface FlaggedItem {
   id: number;
@@ -37,6 +38,8 @@ interface FlaggedPanelProps {
   animationPhase: 'flash' | 'overlay' | 'collapsing' | null;
   disabled?: boolean;
   readOnly?: boolean;
+  aiRecommendations?: Record<string, AiRecommendation> | null;
+  isAiLoading?: boolean;
 }
 
 export function FlaggedPanel({
@@ -50,8 +53,21 @@ export function FlaggedPanel({
   animationPhase,
   disabled,
   readOnly,
+  aiRecommendations,
+  isAiLoading,
 }: FlaggedPanelProps) {
-  const tierGroups = groupFlaggedItems(items);
+  const rawTierGroups = groupFlaggedItems(items);
+
+  // Sort items within each tier by AI importance (highest first) when available
+  const tierGroups = rawTierGroups.map((group) => {
+    if (!aiRecommendations) return group;
+    const sorted = [...group.items].sort((a, b) => {
+      const impA = aiRecommendations[String(a.id)]?.importance ?? 0;
+      const impB = aiRecommendations[String(b.id)]?.importance ?? 0;
+      return impB - impA; // descending — most important first
+    });
+    return { ...group, items: sorted };
+  });
 
   if (items.length === 0) {
     return (
@@ -84,6 +100,8 @@ export function FlaggedPanel({
                   onReject={onReject}
                   onAsk={onAsk}
                   disabled={disabled}
+                  aiRecommendation={aiRecommendations?.[String(item.id)] ?? null}
+                  isAiLoading={isAiLoading}
                 />
               ))}
             </>
@@ -101,6 +119,8 @@ export function FlaggedPanel({
                   onReject={onReject}
                   onAsk={onAsk}
                   disabled={disabled}
+                  aiRecommendation={aiRecommendations?.[String(item.id)] ?? null}
+                  isAiLoading={isAiLoading}
                 />
               ))}
             </>
@@ -127,6 +147,8 @@ export function FlaggedPanel({
                   onReject={() => {}}
                   onAsk={() => {}}
                   disabled={true}
+                  aiRecommendation={aiRecommendations?.[String(item.id)] ?? null}
+                  isAiLoading={isAiLoading}
                 />
               ))}
             </>

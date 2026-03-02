@@ -8,7 +8,7 @@ import { useDashboardStore } from '@/stores/useDashboardStore';
 import { toast } from 'sonner';
 import { LogOut } from 'lucide-react';
 
-import { groupFlaggedItems } from '@/lib/utils/classifyFlaggedItems';
+import { groupFlaggedItems, classifyFlaggedItem } from '@/lib/utils/classifyFlaggedItems';
 import { EmaBriefingBar } from '@/components/dashboard/EmaBriefingBar';
 import { FlaggedPanel } from '@/components/dashboard/FlaggedPanel';
 import { NorthStarBanner } from '@/components/dashboard/NorthStarBanner';
@@ -31,6 +31,8 @@ export default function DashboardPage() {
     modalTargetId,
     animatingApprovalId,
     animationPhase,
+    aiRecommendations,
+    isAiLoading,
     isLoading,
     setActiveView,
     setAutoApproved,
@@ -39,6 +41,8 @@ export default function DashboardPage() {
     initExpandedFlags,
     setActiveModal,
     setAnimationPhase,
+    setAiRecommendations,
+    setAiLoading,
     setLoading,
     removeFlaggedItem,
     addToast,
@@ -46,12 +50,27 @@ export default function DashboardPage() {
 
   const [isActionPending, setIsActionPending] = useState(false);
   const [userName, setUserName] = useState('');
+  const [aiFetched, setAiFetched] = useState(false);
 
   // tRPC
   const reportsQuery = trpc.dashboard.getReports.useQuery({});
   const approveMutation = trpc.approval.approve.useMutation();
   const rejectMutation = trpc.approval.reject.useMutation();
   const askMutation = trpc.approval.askEmployee.useMutation();
+  const aiMutation = trpc.dashboard.getAiRecommendations.useMutation({
+    onSuccess: (data) => {
+      console.log('[AI Mutation] onSuccess, keys:', data ? Object.keys(data).length : 'null');
+      if (data && Object.keys(data).length > 0) {
+        setAiRecommendations(data);
+      } else {
+        setAiLoading(false);
+      }
+    },
+    onError: (err) => {
+      console.error('[AI Mutation] onError:', err.message);
+      setAiLoading(false);
+    },
+  });
 
   // Auth + role check
   useEffect(() => {
@@ -107,6 +126,24 @@ export default function DashboardPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportsQuery.data]);
+
+  // Fire AI recommendations only for "Needs Your Call" (decision tier) items
+  useEffect(() => {
+    const items = flagged.items || [];
+    if (items.length > 0 && !aiFetched && !aiRecommendations) {
+      // Only AI-analyze decision-tier items (HIGH severity, complex signals)
+      const decisionIds = items
+        .filter((i) => classifyFlaggedItem(i) === 'decision')
+        .map((i) => i.id);
+      console.log('[AI Mutation] Firing for decision-tier IDs:', decisionIds);
+      setAiFetched(true);
+      if (decisionIds.length > 0) {
+        setAiLoading(true);
+        aiMutation.mutate({ itemIds: decisionIds });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flagged.items, aiFetched, aiRecommendations]);
 
   // Realtime subscriptions
   useEffect(() => {
@@ -294,6 +331,8 @@ export default function DashboardPage() {
                 animatingApprovalId={animatingApprovalId}
                 animationPhase={animationPhase}
                 disabled={isActionPending}
+                aiRecommendations={aiRecommendations}
+                isAiLoading={isAiLoading}
               />
             </>
           ) : (
@@ -326,6 +365,8 @@ export default function DashboardPage() {
                   animatingApprovalId={null}
                   animationPhase={null}
                   readOnly
+                  aiRecommendations={aiRecommendations}
+                  isAiLoading={aiMutation.isPending}
                 />
               </div>
             </>

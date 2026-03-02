@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import type { AiRecommendation } from '@/lib/llm/prompts/dashboard-recommendations';
 
 interface AutoApprovedReport {
   id: number;
@@ -76,6 +77,8 @@ interface DashboardState {
   animatingApprovalId: number | null;
   animationPhase: AnimationPhase;
   toasts: Toast[];
+  aiRecommendations: Record<string, AiRecommendation> | null;
+  isAiLoading: boolean;
   isLoading: boolean;
 
   // Actions
@@ -91,6 +94,8 @@ interface DashboardState {
   addToast: (toast: Toast) => void;
   removeToast: (id: string) => void;
   setLoading: (loading: boolean) => void;
+  setAiRecommendations: (recs: Record<string, AiRecommendation>) => void;
+  setAiLoading: (loading: boolean) => void;
   removeFlaggedItem: (id: number, action: 'approve' | 'reject' | 'ask') => void;
 }
 
@@ -131,6 +136,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   modalTargetId: null,
   animatingApprovalId: null,
   animationPhase: null,
+  aiRecommendations: null,
+  isAiLoading: false,
   toasts: [],
   isLoading: true,
 
@@ -152,6 +159,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   addToast: (toast) => set((state) => ({ toasts: [...state.toasts, toast] })),
   removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
   setLoading: (loading) => set({ isLoading: loading }),
+  setAiRecommendations: (recs) => set({ aiRecommendations: recs, isAiLoading: false }),
+  setAiLoading: (loading) => set({ isAiLoading: loading }),
   removeFlaggedItem: (id, action) =>
     set((state) => ({
       flagged: {

@@ -1,5 +1,5 @@
 export interface LLMConfig {
-  provider: 'claude' | 'openai';
+  provider: 'claude' | 'gemini' | 'openai';
   model: string;
   temperature: number;
   maxTokens: number;

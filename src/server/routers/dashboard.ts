@@ -1,5 +1,13 @@
 import { z } from "zod/v4";
 import { protectedProcedure, router } from "@/server/trpc/init";
+import { generateLLM } from "@/lib/llm/client";
+import { stripJsonFences } from "@/lib/utils/parseLLMResponse";
+import {
+  buildRecommendationPrompt,
+  parseRecommendationResponse,
+  formatButtonLabel,
+  type AiRecommendation,
+} from "@/lib/llm/prompts/dashboard-recommendations";
 
 export const dashboardRouter = router({
   getReports: protectedProcedure
@@ -55,4 +63,63 @@ export const dashboardRouter = router({
       avgConfidence,
     };
   }),
+
+  getAiRecommendations: protectedProcedure
+    .input(z.object({ itemIds: z.array(z.number()) }))
+    .mutation(async ({ input, ctx }): Promise<Record<string, AiRecommendation>> => {
+      try {
+        // Step 1 (code): re-fetch items from DB by IDs — never trust client payloads
+        const { data: items } = await ctx.supabase
+          .from("dashboard_reports")
+          .select("*")
+          .in("id", input.itemIds)
+          .eq("status", "flagged");
+
+        console.log(`[AI Recommendations] Fetched ${items?.length ?? 0} items from DB for IDs: ${input.itemIds.join(',')}`);
+        if (!items?.length) return {};
+
+        // Step 2 (code): build structured prompt from DB items
+        const { system, user } = buildRecommendationPrompt(items);
+        console.log(`[AI Recommendations] Prompt size: system=${system.length} chars, user=${user.length} chars`);
+
+        // Step 3 (LLM): single Haiku call, 10s timeout
+        // generateLLM has built-in 1-retry — acceptable here (worst case ~23s)
+        const response = await generateLLM(
+          [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          { maxTokens: 3000, timeout: 20000 }
+        );
+
+        console.log(
+          `[AI Recommendations] ${response.model} — ${response.tokensIn}in/${response.tokensOut}out — ${response.latencyMs}ms`
+        );
+
+        // Step 4 (code): strip JSON fences + Zod validate
+        const cleaned = stripJsonFences(response.content);
+        const parsed = parseRecommendationResponse(cleaned);
+
+        // Step 5 (code): format labels deterministically, pass through enriched data
+        return Object.fromEntries(
+          parsed.map((r) => [
+            String(r.id),
+            {
+              action: r.action,
+              label: formatButtonLabel(
+                r.action,
+                items.find((i) => i.id === r.id)?.flag_reason || ""
+              ),
+              rationale: r.rationale,
+              sourceFindings: r.source_findings,
+              importance: r.importance,
+            },
+          ])
+        );
+      } catch (err) {
+        const errMsg = err instanceof Error ? `${err.message}` : String(err);
+        console.error("[AI Recommendations] Failed, using deterministic fallback:", errMsg);
+        return {};
+      }
+    }),
 });
