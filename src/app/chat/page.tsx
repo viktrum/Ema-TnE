@@ -118,7 +118,6 @@ export default function ChatPage() {
       });
 
       // Assemble the report with progress steps
-      setAssemblyLoading(true);
       const stepDelays = [0, 400, 900, 1500, 2200];
       const stepTimers: ReturnType<typeof setTimeout>[] = [];
       stepDelays.forEach((delay, i) => {
