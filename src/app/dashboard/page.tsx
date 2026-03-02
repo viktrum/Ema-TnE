@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { trpc } from '@/lib/trpc/client';
@@ -8,7 +8,7 @@ import { useDashboardStore } from '@/stores/useDashboardStore';
 import { toast } from 'sonner';
 import { LogOut } from 'lucide-react';
 
-import { groupFlaggedItems } from '@/lib/utils/classifyFlaggedItems';
+import { groupFlaggedItems, classifyFlaggedItem } from '@/lib/utils/classifyFlaggedItems';
 import { EmaBriefingBar } from '@/components/dashboard/EmaBriefingBar';
 import { FlaggedPanel } from '@/components/dashboard/FlaggedPanel';
 import { NorthStarBanner } from '@/components/dashboard/NorthStarBanner';
@@ -31,6 +31,8 @@ export default function DashboardPage() {
     modalTargetId,
     animatingApprovalId,
     animationPhase,
+    aiRecommendations,
+    isAiLoading,
     isLoading,
     setActiveView,
     setAutoApproved,
@@ -39,6 +41,8 @@ export default function DashboardPage() {
     initExpandedFlags,
     setActiveModal,
     setAnimationPhase,
+    setAiRecommendations,
+    setAiLoading,
     setLoading,
     removeFlaggedItem,
     addToast,
@@ -46,12 +50,26 @@ export default function DashboardPage() {
 
   const [isActionPending, setIsActionPending] = useState(false);
   const [userName, setUserName] = useState('');
+  const [aiFetched, setAiFetched] = useState(false);
+  const animationTimers = useRef<NodeJS.Timeout[]>([]);
 
   // tRPC
   const reportsQuery = trpc.dashboard.getReports.useQuery({});
   const approveMutation = trpc.approval.approve.useMutation();
   const rejectMutation = trpc.approval.reject.useMutation();
   const askMutation = trpc.approval.askEmployee.useMutation();
+  const aiMutation = trpc.dashboard.getAiRecommendations.useMutation({
+    onSuccess: (data) => {
+      if (data && Object.keys(data).length > 0) {
+        setAiRecommendations(data);
+      } else {
+        setAiLoading(false);
+      }
+    },
+    onError: () => {
+      setAiLoading(false);
+    },
+  });
 
   // Auth + role check
   useEffect(() => {
@@ -108,6 +126,23 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportsQuery.data]);
 
+  // Fire AI recommendations only for "Needs Your Call" (decision tier) items
+  useEffect(() => {
+    const items = flagged.items || [];
+    if (items.length > 0 && !aiFetched && !aiRecommendations) {
+      // Only AI-analyze decision-tier items (HIGH severity, complex signals)
+      const decisionIds = items
+        .filter((i) => classifyFlaggedItem(i) === 'decision')
+        .map((i) => i.id);
+      setAiFetched(true);
+      if (decisionIds.length > 0) {
+        setAiLoading(true);
+        aiMutation.mutate({ itemIds: decisionIds });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flagged.items, aiFetched, aiRecommendations]);
+
   // Realtime subscriptions
   useEffect(() => {
     const reportsChannel = supabase
@@ -135,8 +170,15 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Clear animation timers on unmount
+  useEffect(() => {
+    return () => {
+      animationTimers.current.forEach(clearTimeout);
+    };
+  }, []);
+
   // Approve with animation (respects prefers-reduced-motion)
-  const handleApprove = useCallback(async (id: number) => {
+  async function handleApprove(id: number) {
     setIsActionPending(true);
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -144,31 +186,35 @@ export default function DashboardPage() {
       await approveMutation.mutateAsync({ reportId: id });
 
       if (prefersReducedMotion) {
-        // Skip animation, remove immediately
         removeFlaggedItem(id, 'approve');
         toast.success('Approved — employee notified.');
         reportsQuery.refetch();
       } else {
         // Animation sequence: flash → overlay → collapse → remove
+        animationTimers.current.forEach(clearTimeout);
+        animationTimers.current = [];
         setAnimationPhase(id, 'flash');
-        setTimeout(() => setAnimationPhase(id, 'overlay'), 300);
-        setTimeout(() => setAnimationPhase(id, 'collapsing'), 1100);
-        setTimeout(() => {
-          removeFlaggedItem(id, 'approve');
-          toast.success('Approved — employee notified.');
-          reportsQuery.refetch();
-        }, 1400);
+        animationTimers.current.push(
+          setTimeout(() => setAnimationPhase(id, 'overlay'), 300),
+          setTimeout(() => setAnimationPhase(id, 'collapsing'), 1100),
+          setTimeout(() => {
+            removeFlaggedItem(id, 'approve');
+            toast.success('Approved — employee notified.');
+            reportsQuery.refetch();
+          }, 1400),
+        );
       }
     } catch {
+      animationTimers.current.forEach(clearTimeout);
+      animationTimers.current = [];
       setAnimationPhase(null, null);
       toast.error('Failed to approve.');
     } finally {
       setIsActionPending(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
 
-  const handleReject = useCallback(async (data: { reason: string; notes?: string }) => {
+  async function handleReject(data: { reason: string; notes?: string }) {
     if (!modalTargetId) return;
     setIsActionPending(true);
     try {
@@ -179,10 +225,9 @@ export default function DashboardPage() {
       reportsQuery.refetch();
     } catch { toast.error('Failed to reject.'); }
     finally { setIsActionPending(false); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalTargetId]);
+  }
 
-  const handleAsk = useCallback(async (question: string) => {
+  async function handleAsk(question: string) {
     if (!modalTargetId || !question.trim()) return;
     setIsActionPending(true);
     try {
@@ -191,14 +236,12 @@ export default function DashboardPage() {
       setActiveModal(null);
     } catch { toast.error('Failed to send question.'); }
     finally { setIsActionPending(false); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalTargetId]);
+  }
 
-  const handleLogout = useCallback(async () => {
+  async function handleLogout() {
     await supabase.auth.signOut();
     router.push('/login');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
 
   // Tier counts for briefing bar
   const tierCounts = useMemo(() => {
@@ -294,6 +337,8 @@ export default function DashboardPage() {
                 animatingApprovalId={animatingApprovalId}
                 animationPhase={animationPhase}
                 disabled={isActionPending}
+                aiRecommendations={aiRecommendations}
+                isAiLoading={isAiLoading}
               />
             </>
           ) : (
@@ -326,6 +371,8 @@ export default function DashboardPage() {
                   animatingApprovalId={null}
                   animationPhase={null}
                   readOnly
+                  aiRecommendations={aiRecommendations}
+                  isAiLoading={aiMutation.isPending}
                 />
               </div>
             </>

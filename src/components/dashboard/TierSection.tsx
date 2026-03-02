@@ -51,6 +51,9 @@ export function TierSection({ tier, label, count, children, defaultExpanded = tr
           {count}
         </span>
         <span className="flex-1" />
+        {tier === 'review' && (
+          <span className="text-xs font-bold text-gray-400">Auto-approves in 48 hours</span>
+        )}
         {isExpanded ? (
           <ChevronUp className="h-4 w-4 text-gray-400" />
         ) : (

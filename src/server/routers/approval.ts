@@ -119,8 +119,8 @@ export const approvalRouter = router({
   reject: protectedProcedure
     .input(z.object({
       reportId: z.number(),
-      reason: z.string(),
-      notes: z.string().optional(),
+      reason: z.string().max(2000),
+      notes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { error } = await ctx.supabase.from("approvals").insert({
@@ -165,7 +165,7 @@ export const approvalRouter = router({
   askEmployee: protectedProcedure
     .input(z.object({
       reportId: z.number(),
-      question: z.string(),
+      question: z.string().max(2000),
     }))
     .mutation(async ({ ctx, input }) => {
       const { error } = await ctx.supabase.from("approvals").insert({

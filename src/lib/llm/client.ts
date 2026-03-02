@@ -1,4 +1,5 @@
 import { ClaudeProvider } from './claude-provider';
+import { GeminiProvider } from './gemini-provider';
 import type {
   LLMConfig,
   LLMMessage,
@@ -15,40 +16,82 @@ const DEFAULT_CONFIG: LLMConfig = {
   timeout: 8000,
 };
 
-// Singleton provider
-let provider: LLMProvider | null = null;
+const GEMINI_CONFIG: Partial<LLMConfig> = {
+  provider: 'gemini',
+  model: 'gemini-2.0-flash',
+};
 
-function getProvider(): LLMProvider {
-  if (!provider) {
-    const llmProvider = process.env.LLM_PROVIDER || 'claude';
-    if (llmProvider === 'claude') {
-      provider = new ClaudeProvider();
-    } else {
-      throw new Error(`Unsupported LLM provider: ${llmProvider}`);
-    }
+// Singleton providers — lazy-initialized
+let claudeProvider: LLMProvider | null = null;
+let geminiProvider: LLMProvider | null = null;
+
+function getClaudeProvider(): LLMProvider {
+  if (!claudeProvider) claudeProvider = new ClaudeProvider();
+  return claudeProvider;
+}
+
+function getGeminiProvider(): LLMProvider | null {
+  if (!process.env.GOOGLE_AI_API_KEY) return null;
+  if (!geminiProvider) geminiProvider = new GeminiProvider();
+  return geminiProvider;
+}
+
+function getPrimaryProvider(): LLMProvider {
+  const pref = process.env.LLM_PROVIDER || 'claude';
+  if (pref === 'gemini') {
+    const g = getGeminiProvider();
+    if (g) return g;
   }
-  return provider;
+  return getClaudeProvider();
+}
+
+function getFallbackProvider(): LLMProvider | null {
+  const pref = process.env.LLM_PROVIDER || 'claude';
+  // Fallback is the opposite of primary
+  if (pref === 'gemini') return getClaudeProvider();
+  return getGeminiProvider(); // null if no key
+}
+
+function getFallbackConfig(baseConfig: LLMConfig): LLMConfig {
+  const pref = process.env.LLM_PROVIDER || 'claude';
+  if (pref === 'gemini') {
+    return { ...baseConfig, provider: 'claude', model: 'claude-haiku-4-5-20251001' };
+  }
+  return { ...baseConfig, ...GEMINI_CONFIG } as LLMConfig;
 }
 
 export async function generateLLM(
   messages: LLMMessage[],
   config?: Partial<LLMConfig>
 ): Promise<LLMResponse> {
-  const mergedConfig = { ...DEFAULT_CONFIG, ...config, temperature: 0 }; // Always 0
-  const p = getProvider();
+  const mergedConfig = { ...DEFAULT_CONFIG, ...config, temperature: 0 };
+  const primary = getPrimaryProvider();
 
-  // Retry logic: 1 retry, 3s delay
+  // Single attempt on primary → immediate fallback on failure (no retry delay)
   try {
     return await withTimeout(
-      p.generate(messages, mergedConfig),
+      primary.generate(messages, mergedConfig),
       mergedConfig.timeout
     );
-  } catch {
-    await delay(3000);
-    return await withTimeout(
-      p.generate(messages, mergedConfig),
-      mergedConfig.timeout
-    );
+  } catch (primaryErr) {
+    console.warn(`[LLM] Primary (${mergedConfig.provider}) failed:`, primaryErr instanceof Error ? primaryErr.message : primaryErr);
+
+    // Try fallback provider immediately (no delay)
+    const fallback = getFallbackProvider();
+    if (!fallback) throw primaryErr;
+
+    const fallbackConfig = getFallbackConfig(mergedConfig);
+    console.log(`[LLM] Falling back to ${fallbackConfig.provider}/${fallbackConfig.model}`);
+
+    try {
+      return await withTimeout(
+        fallback.generate(messages, fallbackConfig),
+        fallbackConfig.timeout
+      );
+    } catch (fallbackErr) {
+      console.error('[LLM] Fallback also failed:', fallbackErr instanceof Error ? fallbackErr.message : fallbackErr);
+      throw primaryErr;
+    }
   }
 }
 
@@ -63,12 +106,27 @@ export async function streamLLM(
     temperature: 0,
     maxTokens: config?.maxTokens || 1024,
   };
-  const p = getProvider();
+  const primary = getPrimaryProvider();
 
   try {
-    await p.stream(messages, mergedConfig, callbacks);
-  } catch (err) {
-    callbacks.onError(err instanceof Error ? err : new Error(String(err)));
+    await primary.stream(messages, mergedConfig, callbacks);
+  } catch (primaryErr) {
+    console.warn(`[LLM] Stream primary failed:`, primaryErr instanceof Error ? primaryErr.message : primaryErr);
+
+    const fallback = getFallbackProvider();
+    if (!fallback) {
+      callbacks.onError(primaryErr instanceof Error ? primaryErr : new Error(String(primaryErr)));
+      return;
+    }
+
+    const fallbackConfig = getFallbackConfig(mergedConfig);
+    console.log(`[LLM] Stream falling back to ${fallbackConfig.provider}/${fallbackConfig.model}`);
+
+    try {
+      await fallback.stream(messages, fallbackConfig, callbacks);
+    } catch (fallbackErr) {
+      callbacks.onError(fallbackErr instanceof Error ? fallbackErr : new Error(String(fallbackErr)));
+    }
   }
 }
 
@@ -81,13 +139,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export function isLLMAvailable(): boolean {
   const llmProvider = process.env.LLM_PROVIDER || 'claude';
   if (llmProvider === 'claude') return !!process.env.ANTHROPIC_API_KEY;
-  // OpenAI provider not yet implemented — return false
+  if (llmProvider === 'gemini') return !!process.env.GOOGLE_AI_API_KEY;
   return false;
 }
