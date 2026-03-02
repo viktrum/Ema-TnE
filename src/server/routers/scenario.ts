@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "@/server/trpc/init";
+import { protectedProcedure, publicProcedure, router } from "@/server/trpc/init";
 
 export const scenarioRouter = router({
   getById: protectedProcedure
@@ -15,12 +15,27 @@ export const scenarioRouter = router({
       return data;
     }),
 
-  list: protectedProcedure.query(async ({ ctx }) => {
+  list: publicProcedure.query(async ({ ctx }) => {
     const { data, error } = await ctx.supabase
       .from("scenarios")
-      .select("id, name, destination, start_date, end_date");
+      .select("id, name, destination, start_date, end_date, trip_type, purpose, transactions, context");
 
     if (error) throw error;
-    return data;
+
+    return (data || []).map((s) => {
+      const context = s.context as Record<string, unknown> | null;
+      const hrms = context?.hrms as Record<string, unknown> | null;
+      return {
+        id: s.id as string,
+        name: s.name as string,
+        destination: s.destination as string,
+        start_date: s.start_date as string,
+        end_date: s.end_date as string,
+        trip_type: (s.trip_type as string) || 'domestic',
+        purpose: (s.purpose as string) || '',
+        item_count: Array.isArray(s.transactions) ? s.transactions.length : 0,
+        traveler_name: (hrms?.employee_name as string) || 'Unknown',
+      };
+    });
   }),
 });
