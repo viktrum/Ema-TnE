@@ -193,7 +193,7 @@ E7: Add item (chai at airport → asks for details or adds)
 
 ---
 
-## Current State (End of Session 3)
+## Current State (End of Session 4)
 - Phase 1: ✅ Merged (PR #1)
 - Phase 2: ✅ Merged (PR #2)
 - Phase 3: ✅ Merged (PR #3)
@@ -201,7 +201,8 @@ E7: Add item (chai at airport → asks for details or adds)
 - Phase 3.8: ✅ Merged (PR #5 + hotfix #6 + docs #7)
 - Phase 4: ✅ Merged (PR #8) — scenario selector, edit flows, expandable reasoning
 - Phase 5: ✅ Merged (PR #9) — splash, markdown, progress steps, mapper fix, visual polish
-- Phase 6: 🔄 In progress (eval authoring, gate tests pending)
+- Phase 6: ✅ Merged (PR #10) — evals + pre-demo checklist
+- Phase 7: 🔄 In progress — dashboard 10-star redesign
 - CodeRabbit/Greptile GitHub Apps: NOT installed
 
 **Deferred to Phase 5 (Polish):**
@@ -240,3 +241,52 @@ E7: Add item (chai at airport → asks for details or adds)
 3. CLAUDE.md directory structure not updated for utils/ and evals/ — updated
 **Bug found during UAT:** update_amount NaN when LLM sends currency symbols (PR #6)
 **Deferred:** Markdown tables in chat (LLM returns pipe tables, MessageBubble only renders HTML)
+
+---
+
+## 2026-03-02 19:45 IST — Phase 6 Completed (Stage 1)
+**Branch:** feature/phase-6-evals → merged to develop
+**PR:** #10 (https://github.com/viktrum/Ema-TnE/pull/10)
+**Gate 6:** PASS — 12/12 promptfoo evals, pre-demo checklist passes
+**Key deliverables:** 5 new eval tests (E8-E12), pre-demo-check.js script, npm run evals shortcut
+**Status:** Stage 2 (demo rehearsal) deferred — moving to dashboard redesign
+
+---
+
+## 2026-03-02 20:00 IST — Phase 7 Planned: Dashboard 10-Star Redesign
+**Branch:** feature/phase-7-dashboard-redesign (not started)
+**Status:** Plan approved, ready for implementation
+**Purpose:** Transform flat SaaS inbox into AI-native manager approval experience
+
+### Architecture: Two Views, One Toggle
+- **Manager view (default):** Ema briefing bar + three-tier grouped inbox (Needs Your Call / Quick Review / Auto-Handled)
+- **Admin view (toggle):** Hero banner ("4 hours") + health stats + flag distribution + read-only flags
+
+### Key Design Decisions
+1. Tier classification: severity + confidence → decision/review/auto-handled (computed at render, not stored)
+2. AI recommendations: deterministic regex from flag_reason → approve/reject/ask (no LLM call)
+3. Source cards: visual icon+finding cards replacing text pills (imports SOURCE_MAP from SourceIcons)
+4. Ema as character: briefing bar with natural language summary ("Mihir, 3 items need your call...")
+5. Approve animation: Tailwind transitions (green flash → overlay → collapse → counter update)
+
+### Implementation Phases (5 phases, ~11 new files, ~5 modified)
+- A: Utilities + Store (classifyFlaggedItems, deriveRecommendation, store updates)
+- B: New Components (SourceCardGrid, AiRecommendationBar, TierSection, 3 card types, modals)
+- C: Rewrite Dead-Code Components (NorthStarBanner, FlaggedPanel, StatsPanel)
+- D: Page Refactor (EmaBriefingBar, page.tsx slim orchestrator)
+- E: Polish + Bug Fixes (dedup, source labels, animations)
+
+### Gate 7 UATs
+- G7-01: Manager view renders three tiers with correct classification
+- G7-02: Ema briefing bar shows dynamic counts
+- G7-03: Source cards render with icons and findings
+- G7-04: AI recommendation shown on Tier 1 cards
+- G7-05: Approve animation plays (flash → overlay → collapse)
+- G7-06: Admin view shows hero banner + stats
+- G7-07: View toggle switches between manager and admin
+- G7-08: Realtime submission appears in correct tier
+- G7-09: No duplicate Tanya entries
+- G7-10: tsc clean + build passes
+
+### Detailed plan
+See: `.claude/plans/crispy-forging-giraffe.md`
