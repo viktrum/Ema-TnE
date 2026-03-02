@@ -15,7 +15,13 @@ export async function assembleReport(
 ): Promise<AssembledReport> {
   const rawItems: RawTransaction[] = (scenario.items || scenario.transactions || []) as RawTransaction[];
   const context = scenario.context || {};
-  const traveler = scenario.traveler || { name: "Unknown", cost_center: "", approver: "", employee_id: "" };
+  const hrms = context.hrms as Record<string, string> | undefined;
+  const traveler = scenario.traveler || {
+    name: hrms?.employee_name || "Unknown",
+    cost_center: hrms?.cost_center || "",
+    approver: hrms?.approver_name || "",
+    employee_id: hrms?.employee_id || "",
+  };
   const trip = scenario.trip || {
     destination: scenario.destination || "",
     dates: `${scenario.start_date || ""} to ${scenario.end_date || ""}`,
