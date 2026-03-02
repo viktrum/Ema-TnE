@@ -9,6 +9,8 @@ import Sidebar from '@/components/chat/Sidebar';
 import MessageBubble from '@/components/chat/MessageBubble';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
+import AssemblyProgress from '@/components/chat/AssemblyProgress';
+import BeforeSplash from '@/components/chat/BeforeSplash';
 import { toast } from 'sonner';
 import { extractChatResponse } from '@/lib/utils/parseLLMResponse';
 import { EXPENSE_CATEGORIES } from '@/lib/constants/categories';
@@ -59,6 +61,12 @@ export default function ChatPage() {
     updateExpenseItem,
     updateReportTotal,
     resetChat,
+    loadingSteps,
+    isAssemblyLoading,
+    setAssemblyLoading,
+    updateLoadingStep,
+    showBeforeSplash,
+    setShowBeforeSplash,
   } = useChatStore();
 
   const assembleMutation = trpc.report.assemble.useMutation();
@@ -74,7 +82,7 @@ export default function ChatPage() {
   // Auto-scroll to bottom on new messages or streaming
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }
   }, [messages, isStreaming, isAssembling]);
 
@@ -110,11 +118,25 @@ export default function ChatPage() {
         email: user.email || '',
       });
 
-      // Assemble the report
+      // Assemble the report with progress steps
+      setAssemblyLoading(true);
+      const stepDelays = [0, 400, 900, 1500, 2200];
+      const stepTimers: ReturnType<typeof setTimeout>[] = [];
+      stepDelays.forEach((delay, i) => {
+        stepTimers.push(setTimeout(() => {
+          if (i > 0) updateLoadingStep(i - 1, 'done');
+          updateLoadingStep(i, 'active');
+        }, delay));
+      });
+
       try {
         const result = await assembleMutation.mutateAsync({ scenarioId });
 
         if (cancelled) return;
+
+        // Mark all steps done
+        stepTimers.forEach(clearTimeout);
+        for (let i = 0; i < 5; i++) updateLoadingStep(i, 'done');
 
         const assembledReport = result.report;
         if (result._fallback) setUsedFallback(true);
@@ -136,6 +158,7 @@ export default function ChatPage() {
           timestamp: Date.now(),
         });
       } catch (err) {
+        stepTimers.forEach(clearTimeout);
         if (!cancelled) {
           console.error('Assembly error:', err);
           toast.error('Failed to assemble expense report.', {
@@ -144,6 +167,7 @@ export default function ChatPage() {
         }
       } finally {
         if (!cancelled) {
+          setAssemblyLoading(false);
           setIsAssembling(false);
         }
       }
@@ -513,6 +537,10 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen w-full">
+      {showBeforeSplash && (
+        <BeforeSplash onDismiss={() => setShowBeforeSplash(false)} />
+      )}
+
       {/* Left sidebar */}
       <Sidebar user={sidebarUser} onLogout={handleLogout} />
 
@@ -533,7 +561,7 @@ export default function ChatPage() {
         {/* Message scroll area */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto bg-white py-4"
+          className="flex-1 space-y-1 overflow-y-auto bg-white py-6"
         >
           {messages.map((msg, index) => {
             const isFirstAssistant = msg.id === firstMessageId;
@@ -550,7 +578,7 @@ export default function ChatPage() {
                     <div className="overflow-x-auto rounded-lg border border-gray-200">
                       <table className="w-full text-left text-sm">
                         <thead>
-                          <tr className="bg-gray-50 text-xs font-medium uppercase tracking-wide text-gray-500">
+                          <tr className="bg-[#1F8844]/5 text-xs font-medium uppercase tracking-wide text-gray-500">
                             <th className="px-3 py-2 w-8">#</th>
                             <th className="px-3 py-2">Description</th>
                             <th className="px-3 py-2 text-right">Amount</th>
@@ -719,18 +747,26 @@ export default function ChatPage() {
             );
           })}
 
-          {/* Typing indicator during assembly or streaming */}
-          {(isAssembling || isStreaming) && <TypingIndicator />}
+          {/* Progress steps during assembly, typing dots during streaming */}
+          {isAssemblyLoading && <AssemblyProgress steps={loadingSteps} />}
+          {isStreaming && !isAssemblyLoading && <TypingIndicator />}
 
           {/* Submit button */}
           {showSubmitButton && !hasSubmitted && (
-            <div className="flex justify-center px-4 py-3">
+            <div className="flex justify-center px-4 py-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="rounded-lg bg-[#1F8844] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#186d36] disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-2 rounded-lg bg-[#1F8844] px-6 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-[#186d36] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isSubmitting ? 'Submitting...' : 'Confirm & Submit'}
+                {isSubmitting ? 'Submitting...' : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Confirm &amp; Submit
+                  </>
+                )}
               </button>
             </div>
           )}

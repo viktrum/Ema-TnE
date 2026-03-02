@@ -234,5 +234,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     showSubmitButton: false,
     assemblyData: null,
     isAssemblyLoading: false,
+    showBeforeSplash: true,
+    loadingSteps: [
+      { label: 'Checking card transactions...', status: 'pending' as const },
+      { label: 'Matching calendar events...', status: 'pending' as const },
+      { label: 'Cross-referencing CRM records...', status: 'pending' as const },
+      { label: 'Applying policy rules...', status: 'pending' as const },
+      { label: 'Assembling expense report...', status: 'pending' as const },
+    ],
   }),
 }));
