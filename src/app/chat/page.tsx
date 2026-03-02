@@ -9,6 +9,8 @@ import Sidebar from '@/components/chat/Sidebar';
 import MessageBubble from '@/components/chat/MessageBubble';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
+import AssemblyProgress from '@/components/chat/AssemblyProgress';
+import BeforeSplash from '@/components/chat/BeforeSplash';
 import { toast } from 'sonner';
 import { extractChatResponse } from '@/lib/utils/parseLLMResponse';
 import { EXPENSE_CATEGORIES } from '@/lib/constants/categories';
@@ -34,7 +36,6 @@ export default function ChatPage() {
 
   const [sidebarUser, setSidebarUser] = useState<SidebarUser | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [isAssembling, setIsAssembling] = useState(true);
   const [firstMessageId, setFirstMessageId] = useState<string | null>(null);
   const [usedFallback, setUsedFallback] = useState(false);
 
@@ -59,6 +60,12 @@ export default function ChatPage() {
     updateExpenseItem,
     updateReportTotal,
     resetChat,
+    loadingSteps,
+    isAssemblyLoading,
+    setAssemblyLoading,
+    updateLoadingStep,
+    showBeforeSplash,
+    setShowBeforeSplash,
   } = useChatStore();
 
   const assembleMutation = trpc.report.assemble.useMutation();
@@ -74,9 +81,9 @@ export default function ChatPage() {
   // Auto-scroll to bottom on new messages or streaming
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }
-  }, [messages, isStreaming, isAssembling]);
+  }, [messages, isStreaming, isAssemblyLoading]);
 
   // Initialize: fetch user, set scenario, assemble report
   useEffect(() => {
@@ -85,7 +92,7 @@ export default function ChatPage() {
     async function init() {
       resetChat();
       setActiveScenario(scenarioId);
-      setIsAssembling(true);
+      setAssemblyLoading(true);
 
       // Get current user
       const supabase = createClient();
@@ -110,11 +117,23 @@ export default function ChatPage() {
         email: user.email || '',
       });
 
-      // Assemble the report
+      // Assemble the report with progress steps
+      const stepDelays = [0, 400, 900, 1500, 2200];
+      const stepTimers: ReturnType<typeof setTimeout>[] = [];
+      stepDelays.forEach((delay, i) => {
+        stepTimers.push(setTimeout(() => {
+          if (i > 0) updateLoadingStep(i - 1, 'done');
+          updateLoadingStep(i, 'active');
+        }, delay));
+      });
+
       try {
         const result = await assembleMutation.mutateAsync({ scenarioId });
 
         if (cancelled) return;
+
+        // Mark all steps done
+        for (let i = 0; i < 5; i++) updateLoadingStep(i, 'done');
 
         const assembledReport = result.report;
         if (result._fallback) setUsedFallback(true);
@@ -143,8 +162,9 @@ export default function ChatPage() {
           });
         }
       } finally {
+        stepTimers.forEach(clearTimeout);
         if (!cancelled) {
-          setIsAssembling(false);
+          setAssemblyLoading(false);
         }
       }
     }
@@ -441,6 +461,8 @@ export default function ChatPage() {
     router.push('/login');
   }, [router]);
 
+  const handleDismissSplash = useCallback(() => setShowBeforeSplash(false), [setShowBeforeSplash]);
+
   // Demo shortcut text for Ctrl+D — scenario-aware
   const DEMO_RESPONSES: Record<string, string> = {
     'mumbai-trip': 'Yes, ₹1,100. No receipt.',
@@ -513,6 +535,10 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen w-full">
+      {showBeforeSplash && (
+        <BeforeSplash onDismiss={handleDismissSplash} />
+      )}
+
       {/* Left sidebar */}
       <Sidebar user={sidebarUser} onLogout={handleLogout} />
 
@@ -521,7 +547,7 @@ export default function ChatPage() {
         {/* Header */}
         <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
           <span className="text-sm font-medium text-gray-500"># expense-reports</span>
-          {process.env.NODE_ENV === 'development' && !isAssembling && report && (
+          {process.env.NODE_ENV === 'development' && !isAssemblyLoading && report && (
             <span className={`rounded px-2 py-0.5 text-[10px] font-mono ${
               usedFallback ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
             }`}>
@@ -533,7 +559,7 @@ export default function ChatPage() {
         {/* Message scroll area */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto bg-white py-4"
+          className="flex-1 space-y-1 overflow-y-auto bg-white py-6"
         >
           {messages.map((msg, index) => {
             const isFirstAssistant = msg.id === firstMessageId;
@@ -550,7 +576,7 @@ export default function ChatPage() {
                     <div className="overflow-x-auto rounded-lg border border-gray-200">
                       <table className="w-full text-left text-sm">
                         <thead>
-                          <tr className="bg-gray-50 text-xs font-medium uppercase tracking-wide text-gray-500">
+                          <tr className="bg-[#1F8844]/5 text-xs font-medium uppercase tracking-wide text-gray-500">
                             <th className="px-3 py-2 w-8">#</th>
                             <th className="px-3 py-2">Description</th>
                             <th className="px-3 py-2 text-right">Amount</th>
@@ -719,18 +745,26 @@ export default function ChatPage() {
             );
           })}
 
-          {/* Typing indicator during assembly or streaming */}
-          {(isAssembling || isStreaming) && <TypingIndicator />}
+          {/* Progress steps during assembly, typing dots during streaming */}
+          {isAssemblyLoading && <AssemblyProgress steps={loadingSteps} />}
+          {isStreaming && !isAssemblyLoading && <TypingIndicator />}
 
           {/* Submit button */}
           {showSubmitButton && !hasSubmitted && (
-            <div className="flex justify-center px-4 py-3">
+            <div className="flex justify-center px-4 py-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="rounded-lg bg-[#1F8844] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#186d36] disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-2 rounded-lg bg-[#1F8844] px-6 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-[#186d36] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isSubmitting ? 'Submitting...' : 'Confirm & Submit'}
+                {isSubmitting ? 'Submitting...' : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Confirm &amp; Submit
+                  </>
+                )}
               </button>
             </div>
           )}
@@ -739,7 +773,7 @@ export default function ChatPage() {
         {/* Chat input — fixed at bottom */}
         <ChatInput
           onSend={handleSend}
-          disabled={isAssembling || isStreaming}
+          disabled={isAssemblyLoading || isStreaming}
           demoResponse={demoResponse}
           value={inputText}
           onChange={setInputText}

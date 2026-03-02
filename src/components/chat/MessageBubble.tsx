@@ -1,6 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import DOMPurify from 'isomorphic-dompurify';
 
 interface Message {
@@ -23,6 +25,9 @@ function formatTime(timestamp: number): string {
   });
 }
 
+const proseClasses =
+  'prose prose-sm max-w-none text-gray-800 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-100 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left';
+
 export default function MessageBubble({
   message,
   userInitials = 'U',
@@ -31,9 +36,10 @@ export default function MessageBubble({
   const isAssistant = message.role === 'assistant';
 
   if (isAssistant) {
+    const isHTML = /^\s*<(?:p|div|table|strong|em|ul|ol|li|h[1-6]|br|span|a)\b/i.test(message.content);
+
     return (
       <div className="flex items-start gap-3 px-4 py-2">
-        {/* Ema Avatar */}
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1F8844] text-xs font-bold text-white">
           E
         </div>
@@ -46,21 +52,27 @@ export default function MessageBubble({
             </span>
           </div>
 
-          <div className="rounded-lg bg-[#F3F4F6] px-4 py-3">
-            <div
-              className="prose prose-sm max-w-none text-gray-800 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-100 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left"
-              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(message.content) }}
-            />
+          <div className="rounded-lg border-l-2 border-l-[#1F8844]/20 bg-[#F8F9FA] px-4 py-3">
+            {isHTML ? (
+              <div
+                className={proseClasses}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(message.content) }}
+              />
+            ) : (
+              <div className={proseClasses}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {message.content}
+                </ReactMarkdown>
+              </div>
+            )}
           </div>
 
-          {/* Embedded components (expense table, reasoning panel, etc.) */}
           {children && <div className="mt-2">{children}</div>}
         </div>
       </div>
     );
   }
 
-  // User message — right-aligned
   return (
     <div className="flex items-start justify-end gap-3 px-4 py-2">
       <div className="max-w-[60%]">
@@ -71,14 +83,13 @@ export default function MessageBubble({
           <span className="text-sm font-semibold text-gray-700">You</span>
         </div>
 
-        <div className="rounded-lg bg-[#1F8844] px-4 py-3 text-white">
+        <div className="rounded-lg bg-[#1F8844] px-4 py-3 text-white shadow-sm">
           <p className="text-sm leading-relaxed whitespace-pre-wrap">
             {message.content}
           </p>
         </div>
       </div>
 
-      {/* User Avatar */}
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-600 text-xs font-bold text-white">
         {userInitials}
       </div>

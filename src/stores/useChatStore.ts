@@ -76,8 +76,6 @@ interface ChatState {
   showBeforeSplash: boolean;
   loadingSteps: LoadingStep[];
   isAssemblyLoading: boolean;
-  assemblyData: { report: Report } | null;
-
   // Messages
   messages: ChatMessage[];
   isStreaming: boolean;
@@ -107,7 +105,6 @@ interface ChatState {
   setLoadingSteps: (steps: LoadingStep[]) => void;
   updateLoadingStep: (index: number, status: LoadingStep['status']) => void;
   setAssemblyLoading: (loading: boolean) => void;
-  setAssemblyData: (data: { report: Report } | null) => void;
   setReport: (report: Report | null) => void;
   addMessage: (message: ChatMessage) => void;
   updateMessage: (id: string, content: string) => void;
@@ -140,7 +137,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     { label: 'Assembling expense report...', status: 'pending' },
   ],
   isAssemblyLoading: false,
-  assemblyData: null,
   messages: [],
   isStreaming: false,
   streamingMessageId: null,
@@ -165,7 +161,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return { loadingSteps: steps };
   }),
   setAssemblyLoading: (loading) => set({ isAssemblyLoading: loading }),
-  setAssemblyData: (data) => set({ assemblyData: data }),
   setReport: (report) => set({ report, reportVersion: get().reportVersion + 1 }),
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
   updateMessage: (id, content) => set((state) => ({
@@ -232,7 +227,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     isSubmitting: false,
     hasSubmitted: false,
     showSubmitButton: false,
-    assemblyData: null,
-    isAssemblyLoading: false,
+      isAssemblyLoading: false,
+    showBeforeSplash: true,
+    loadingSteps: [
+      { label: 'Checking card transactions...', status: 'pending' as const },
+      { label: 'Matching calendar events...', status: 'pending' as const },
+      { label: 'Cross-referencing CRM records...', status: 'pending' as const },
+      { label: 'Applying policy rules...', status: 'pending' as const },
+      { label: 'Assembling expense report...', status: 'pending' as const },
+    ],
   }),
 }));

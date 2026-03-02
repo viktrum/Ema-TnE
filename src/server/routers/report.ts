@@ -10,7 +10,6 @@ export const reportRouter = router({
     .mutation(async ({ ctx, input }) => {
       const startTime = Date.now();
 
-      // Fetch scenario
       const { data: scenario, error: scenarioError } = await ctx.supabase
         .from("scenarios")
         .select("*")
@@ -18,13 +17,9 @@ export const reportRouter = router({
         .single();
 
       if (scenarioError || !scenario) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Scenario not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Scenario not found" });
       }
 
-      // Fetch policy
       const { data: policy, error: policyError } = await ctx.supabase
         .from("policies")
         .select("*")
@@ -32,17 +27,12 @@ export const reportRouter = router({
         .single();
 
       if (policyError || !policy) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Policy not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
       }
 
-      // Check if scenario has embedded items (seed data) or needs fallback fetch
       let scenarioData: RawScenario = scenario as unknown as RawScenario;
 
       if (!scenarioData.items || (scenarioData.items as unknown[]).length === 0) {
-        // Scenario doesn't have embedded items — check fallbacks table
         const { data: fallback } = await ctx.supabase
           .from("fallbacks")
           .select("*")
@@ -51,17 +41,13 @@ export const reportRouter = router({
           .single();
 
         if (fallback?.response) {
-          // Merge fallback data into scenario for the engine
           scenarioData = { ...scenarioData, ...fallback.response };
         }
       }
 
-      // HYBRID ASSEMBLY — deterministic matching + AI categorization (parallel)
       const report = await assembleReport(scenarioData, policy as unknown as RawPolicy);
-
       const latencyMs = Date.now() - startTime;
 
-      // Save report to Supabase
       const reportId = report.id || `RPT-${Date.now()}`;
       const { error: reportError } = await ctx.supabase
         .from("reports")
@@ -89,10 +75,8 @@ export const reportRouter = router({
 
       if (reportError) {
         console.error("Report save error:", reportError);
-        // Don't throw — the report was assembled, just save failed
       }
 
-      // Log to audit_log
       await ctx.supabase.from("audit_log").insert({
         event_type: "assembly",
         user_id: ctx.user.id,
@@ -106,7 +90,6 @@ export const reportRouter = router({
         },
       });
 
-      // Log to ai_metrics
       await ctx.supabase.from("ai_metrics").insert({
         prompt_type: "assembly",
         model: "deterministic",
@@ -157,7 +140,6 @@ export const reportRouter = router({
         });
       }
 
-      // Bridge to dashboard_reports for realtime dashboard (Phase 3.5)
       const reportItems = (data.items as any[]) || [];
       const flaggedItems = (data.flagged_items as any[]) || [];
       const hasFlagged = flaggedItems.length > 0;
@@ -166,14 +148,12 @@ export const reportRouter = router({
         ? Math.round(reportItems.reduce((sum: number, item: any) => sum + (item.confidence || 0), 0) / reportItems.length)
         : 0;
 
-      // Fetch scenario for destination + dates
       const { data: scenario } = await ctx.supabase
         .from("scenarios")
         .select("destination, start_date, end_date")
         .eq("id", data.scenario_id)
         .single();
 
-      // Fetch user for role
       const { data: dbUser } = await ctx.supabase
         .from("users")
         .select("role, name")
@@ -191,14 +171,44 @@ export const reportRouter = router({
         ? `${new Date(scenario.start_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}-${new Date(scenario.end_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`
         : 'Today';
 
-      // Determine flag details from the most severe flagged item
+      // Determine flag details — severity by flag TYPE, not confidence
       let flagReason: string | null = null;
       let flagSeverity: string | null = null;
       if (hasFlagged) {
         const topFlag = flaggedItems[0] as any;
-        flagReason = topFlag.flag_reason || topFlag.reasoning || `${topFlag.description || 'Item'} flagged for review`;
-        flagSeverity = (topFlag.confidence ?? 80) < 70 ? 'HIGH' : (topFlag.confidence ?? 80) < 85 ? 'MEDIUM' : 'LOW';
+        const desc = topFlag.description || 'Item';
+        const amt = topFlag.amount ? `₹${Number(topFlag.amount).toLocaleString('en-IN')} ` : '';
+
+        if (topFlag.original_category && topFlag.category) {
+          flagReason = `Re-categorization: ${amt}${desc} re-categorized from ${topFlag.original_category} to ${topFlag.category}`;
+        } else if (topFlag.flag_reason) {
+          flagReason = topFlag.flag_reason;
+        } else {
+          flagReason = `${amt}${desc} flagged for review`;
+        }
+
+        flagSeverity = deriveFlagSeverity(topFlag);
       }
+
+      // Build structured reasoning matching seeded format {summary, ai_reasoning}
+      const summaryObj = data.summary as Record<string, unknown> | string | null;
+      const reasoning: Record<string, string> = {};
+      if (typeof summaryObj === 'string') {
+        reasoning.summary = summaryObj;
+      } else if (summaryObj) {
+        reasoning.summary = String(summaryObj.summary || `${reportItems.length} items totaling ₹${data.total_amount?.toLocaleString('en-IN')}. ${flaggedItems.length} flagged for review.`);
+        if (summaryObj.ai_reasoning) reasoning.ai_reasoning = String(summaryObj.ai_reasoning);
+      }
+      if (!reasoning.summary) {
+        reasoning.summary = `${reportItems.length} expense items totaling ₹${data.total_amount?.toLocaleString('en-IN')}. Average confidence ${avgConfidence}%.`;
+      }
+      if (hasFlagged && !reasoning.ai_reasoning) {
+        const topFlag = flaggedItems[0] as any;
+        reasoning.ai_reasoning = typeof topFlag.reasoning === 'string' ? topFlag.reasoning : '';
+      }
+
+      const rawSources = [...new Set(reportItems.flatMap((item: any) => item.sources || []))];
+      const cleanSources = rawSources.map(cleanSourceLabel);
 
       await ctx.supabase.from("dashboard_reports").insert({
         scenario_id: data.scenario_id,
@@ -215,11 +225,10 @@ export const reportRouter = router({
         flag_reason: flagReason,
         flag_severity: flagSeverity,
         items: data.items,
-        reasoning: data.summary || {},
-        sources: [...new Set(reportItems.flatMap((item: any) => item.sources || []))],
+        reasoning,
+        sources: cleanSources,
       });
 
-      // Audit log + return (parallelized for speed)
       await ctx.supabase.from("audit_log").insert({
         event_type: "submit",
         user_id: ctx.user.id,
@@ -230,3 +239,39 @@ export const reportRouter = router({
       return data;
     }),
 });
+
+function deriveFlagSeverity(flag: any): string {
+  const reason = ((flag.flag_reason || '') + ' ' + (flag.reasoning || '')).toLowerCase();
+  const policyStatus = (flag.policy_status || '').toLowerCase();
+
+  if (policyStatus === 'exceeds_policy') return 'HIGH';
+  if (reason.includes('missing receipt') && (flag.amount || 0) > 5000) return 'HIGH';
+  if (reason.includes('unauthorized') || reason.includes('not eligible')) return 'HIGH';
+  if (reason.includes('policy violation')) return 'HIGH';
+
+  if (flag.original_category) return 'MEDIUM';
+  if (reason.includes('duplicate')) return 'MEDIUM';
+  if (reason.includes('pre-approval') || reason.includes('preapproval')) return 'MEDIUM';
+  if (reason.includes('pattern') || reason.includes('anomaly')) return 'MEDIUM';
+  if (policyStatus === 'pending_review') return 'MEDIUM';
+
+  return 'LOW';
+}
+
+function cleanSourceLabel(source: string): string {
+  const labelMap: Record<string, string> = {
+    'calendar': 'Calendar',
+    'crm': 'CRM',
+    'policy': 'Policy',
+    'hrms': 'HRMS',
+    'email': 'Email',
+    'receipt': 'Receipt Scanner',
+    'receipt_scanner': 'Receipt Scanner',
+    'transaction_history': 'Transaction History',
+    'pattern_analysis': 'Pattern Analysis',
+    'booking_system': 'Booking System',
+    'pre_approval': 'Pre-Approval',
+    'payment_gateway': 'Payment Gateway',
+  };
+  return labelMap[source.toLowerCase()] || source;
+}

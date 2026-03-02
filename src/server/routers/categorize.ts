@@ -61,16 +61,22 @@ export const categorizeRouter = router({
         const cleaned = stripJsonFences(response.content);
         const parsed = JSON.parse(cleaned);
 
-        const aiCategory = parsed.category || input.newCategory;
+        const aiCategory = String(parsed.category || input.newCategory);
         const agrees =
           aiCategory.toLowerCase() === input.newCategory.toLowerCase();
+
+        // Validate policy_status against known values
+        const validPolicyStatuses = ['within_policy', 'within_policy_after_recategorization', 'exceeds_policy', 'near_limit', 'pending_review'];
+        const policyStatus = validPolicyStatuses.includes(parsed.policy_status)
+          ? parsed.policy_status
+          : 'pending_review';
 
         return {
           accepted: agrees,
           category: input.newCategory,
-          confidence: parsed.confidence || 80,
-          reasoning: parsed.reasoning || '',
-          policy_status: parsed.policy_status || 'pending_review',
+          confidence: Number(parsed.confidence) || 80,
+          reasoning: String(parsed.reasoning || ''),
+          policy_status: policyStatus,
           ai_suggestion: agrees
             ? null
             : {
