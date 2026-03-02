@@ -321,3 +321,44 @@ Narration: Switch tabs to localhost silently. Say nothing about the switch.
 
 ---
 
+### Gate 6: Eval Status + Pre-Demo Protocol
+
+**30 minutes before the demo, run these in order:**
+
+#### 1. Run Prompt Evals
+```bash
+cd evals && promptfoo eval
+```
+
+**Decision tree based on results:**
+
+| Result | Action |
+|--------|--------|
+| 5/5 core evals pass (E8-E12) | Demo live. Full confidence. |
+| 4/5 pass AND E8 (dinner) passes | Demo live. Acceptable. |
+| E8 (dinner categorization) fails | Switch to FALLBACK_MODE for demo. The hero moment must work. |
+| <3/5 pass | Do NOT demo live. Use FALLBACK_MODE for entire demo. |
+
+To view detailed results: `promptfoo view` (opens browser dashboard).
+
+#### 2. Run Automated Pre-Demo Checks
+```bash
+node scripts/pre-demo-check.js
+```
+
+This checks health endpoint, chat route availability, dashboard routing, and environment config. It also prints a manual checklist for browser-based checks and fallback resilience testing.
+
+#### 3. Fallback Resilience (if not already verified)
+1. Comment out `ANTHROPIC_API_KEY` in `.env.local`
+2. Restart: `npm run dev`
+3. Load `/chat` — verify it renders identically from fallbacks
+4. Restore key, restart
+
+#### 4. Final Browser Prep
+- Chrome: `/chat` with Mumbai loaded
+- Chrome Tab 2: `/dashboard` (logged in as Mihir)
+- Safari/Firefox: localhost:3000 as offline backup
+- Font size: Cmd+Plus twice
+
+---
+
