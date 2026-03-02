@@ -36,6 +36,9 @@ export default function MessageBubble({
   if (isAssistant) {
     const isHTML = /^\s*<(?:p|div|table|strong|em|ul|ol|li|h[1-6]|br|span|a)\b/i.test(message.content);
 
+    // Don't render empty streaming placeholder — the TypingIndicator handles that
+    if (!message.content.trim() && !children) return null;
+
     return (
       <div className="flex items-start gap-3 px-4 py-3 animate-in fade-in slide-in-from-left-2 duration-300">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1F8844] text-[10px] font-bold text-white">
