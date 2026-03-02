@@ -1054,3 +1054,27 @@ INSERT INTO fallbacks (id, scenario_id, type, response, text) VALUES (
 
 All your expenses are within policy! Let me know if you have questions about any specific limit.'
 );
+
+-- ============================================================================
+-- BANGALORE SCENARIO FALLBACKS (Phase 4)
+-- ============================================================================
+
+INSERT INTO fallbacks (id, scenario_id, trigger_key, text, response) VALUES
+('bangalore-trip/chat-initial', 'bangalore-trip', 'chat-initial',
+'Hey Vikram, welcome back from the Bangalore offsite. I''ve assembled your expense report — 4 items, 3 auto-approved. Take a look.',
+'{"response":"Hey Vikram, welcome back from the Bangalore offsite. I''ve assembled your expense report — 4 items, 3 auto-approved. Take a look.","actions":[],"report_updated":false,"show_submit_button":false,"needs_categorization":false}');
+
+INSERT INTO fallbacks (id, scenario_id, trigger_key, text, response) VALUES
+('bangalore-trip/chat-confirm-lunch', 'bangalore-trip', 'chat-confirm-lunch',
+'Got it — team lunch pre-approved under the offsite budget. Updated to ₹18,900 for 8 attendees (₹2,362/person). That''s slightly above the ₹2,000/person team meal limit, but the offsite pre-approval covers it.',
+'{"response":"Got it — team lunch pre-approved under the offsite budget. Updated to ₹18,900 for 8 attendees (₹2,362/person). That''s slightly above the ₹2,000/person team meal limit, but the offsite pre-approval covers it.","actions":[],"report_updated":true,"show_submit_button":true,"needs_categorization":false}');
+
+INSERT INTO fallbacks (id, scenario_id, trigger_key, text, response) VALUES
+('bangalore-trip/chat-submit', 'bangalore-trip', 'chat-submit',
+'Report submitted. Routing to Chitra Nair for review. The team lunch flag will need her sign-off since it exceeds per-person limits.',
+'{"response":"Report submitted. Routing to Chitra Nair for review. The team lunch flag will need her sign-off since it exceeds per-person limits.","actions":[{"type":"submit_report"}],"report_updated":false,"show_submit_button":false,"needs_categorization":false,"submitted":true}');
+
+INSERT INTO fallbacks (id, scenario_id, trigger_key, text, response) VALUES
+('bangalore-trip/chat-policy-question', 'bangalore-trip', 'chat-policy-question',
+'Team meal policy: ₹2,000/person limit for team meals. Your lunch was ₹2,362/person — 18% over. But the offsite pre-approval (PA-2026-0215-VR, ₹40,000 budget) covers group meals. Conference fees have a separate ₹5,000 limit — your KubeCon day pass (₹3,500) is within that.',
+'{"response":"Team meal policy: ₹2,000/person limit for team meals. Your lunch was ₹2,362/person — 18% over. But the offsite pre-approval (PA-2026-0215-VR, ₹40,000 budget) covers group meals. Conference fees have a separate ₹5,000 limit — your KubeCon day pass (₹3,500) is within that.","actions":[],"report_updated":false,"show_submit_button":false,"needs_categorization":false}');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { trpc } from '@/lib/trpc/client';
@@ -11,6 +11,7 @@ import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import { toast } from 'sonner';
 import { extractChatResponse } from '@/lib/utils/parseLLMResponse';
+import { EXPENSE_CATEGORIES } from '@/lib/constants/categories';
 
 interface SidebarUser {
   name: string;
@@ -62,6 +63,13 @@ export default function ChatPage() {
 
   const assembleMutation = trpc.report.assemble.useMutation();
   const submitMutation = trpc.report.submit.useMutation();
+  const reCategorize = trpc.categorize.reCategorize.useMutation();
+
+  // Phase 4: Edit flows + expandable reasoning state
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
+  const [nudge, setNudge] = useState<{ itemId: string; aiCategory: string; aiReasoning: string } | null>(null);
 
   // Auto-scroll to bottom on new messages or streaming
   useEffect(() => {
@@ -111,6 +119,10 @@ export default function ChatPage() {
         const assembledReport = result.report;
         if (result._fallback) setUsedFallback(true);
         setReport(assembledReport);
+
+        // Pre-expand flagged items reasoning
+        const flaggedIds = new Set(assembledReport.flagged_items.map((f: { id: string }) => f.id));
+        setExpandedItems(flaggedIds);
 
         // Build the initial AI message with expense table HTML and gap question
         const initialContent = buildInitialMessage(assembledReport);
@@ -429,9 +441,75 @@ export default function ChatPage() {
     router.push('/login');
   }, [router]);
 
-  // Demo shortcut text for Ctrl+D
-  const demoResponse =
-    scenarioId === 'mumbai-trip' ? 'Yes, ₹1,100. No receipt.' : undefined;
+  // Demo shortcut text for Ctrl+D — scenario-aware
+  const DEMO_RESPONSES: Record<string, string> = {
+    'mumbai-trip': 'Yes, ₹1,100. No receipt.',
+    'bangalore-trip': 'Yes, the team lunch was pre-approved as part of the offsite budget. All 8 attendees were engineering team members.',
+    'london-trip': 'Yes, the Heathrow Express was £25. I have the receipt.',
+  };
+  const demoResponse = DEMO_RESPONSES[scenarioId];
+
+  // Phase 4: Toggle reasoning expansion
+  const toggleItemExpansion = useCallback((itemId: string) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }, []);
+
+  // Phase 4: Handle category change with AI nudge
+  async function handleCategoryChange(itemId: string, currentCategory: string, newCategory: string) {
+    if (newCategory === currentCategory) return;
+    setEditingCategoryId(null);
+
+    const item = report?.items.find(i => i.id === itemId);
+    if (!item) return;
+
+    updateExpenseItem(itemId, { category: newCategory });
+
+    try {
+      const result = await reCategorize.mutateAsync({
+        itemId,
+        itemDescription: item.description,
+        itemAmount: item.amount,
+        currentCategory,
+        newCategory,
+        scenarioId,
+      });
+
+      updateExpenseItem(itemId, {
+        confidence: result.confidence,
+        reasoning: result.reasoning,
+        policy_status: result.policy_status as 'within_policy' | 'within_policy_after_recategorization' | 'exceeds_policy' | 'pending_review',
+      });
+
+      if (!result.accepted && result.ai_suggestion) {
+        setNudge({
+          itemId,
+          aiCategory: result.ai_suggestion.category,
+          aiReasoning: result.ai_suggestion.reasoning,
+        });
+      }
+    } catch {
+      updateExpenseItem(itemId, { category: currentCategory });
+      toast.error('Failed to update category');
+    }
+  }
+
+  // Phase 4: Handle inline amount edit
+  function handleAmountChange(itemId: string, rawValue: string) {
+    setEditingAmountId(null);
+    const newAmount = Number(rawValue.replace(/[^0-9.]/g, ''));
+    if (isNaN(newAmount) || newAmount <= 0) return;
+
+    const item = report?.items.find(i => i.id === itemId);
+    if (!item || item.amount === newAmount) return;
+
+    updateExpenseItem(itemId, { amount: newAmount });
+    updateReportTotal();
+  }
 
   return (
     <div className="flex h-screen w-full">
@@ -468,7 +546,7 @@ export default function ChatPage() {
               >
                 {isFirstAssistant && report ? (
                   <div className="mt-3 space-y-3">
-                    {/* Clean expense table */}
+                    {/* Expense table with inline edit + expandable reasoning */}
                     <div className="overflow-x-auto rounded-lg border border-gray-200">
                       <table className="w-full text-left text-sm">
                         <thead>
@@ -478,50 +556,114 @@ export default function ChatPage() {
                             <th className="px-3 py-2 text-right">Amount</th>
                             <th className="px-3 py-2">Category</th>
                             <th className="px-3 py-2 text-center">Confidence</th>
+                            <th className="px-3 py-2 w-12" />
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {report.items.map((item, idx) => {
                             const isDinner = item.original_category !== null;
                             const isGap = item.recommendation === 'request_employee_input';
+                            const isExpanded = expandedItems.has(item.id);
                             return (
-                              <tr
-                                key={item.id}
-                                className={
-                                  isDinner ? 'bg-[#FEF3C7] border-l-[3px] border-l-[#F59E0B]'
-                                  : isGap ? 'bg-[#FEF9C3] border-l-[3px] border-l-[#EAB308]'
-                                  : 'hover:bg-gray-50'
-                                }
-                              >
-                                <td className="px-3 py-2 text-xs text-gray-400">{idx + 1}</td>
-                                <td className="px-3 py-2">
-                                  <span className="font-medium text-gray-800">{item.description}</span>
-                                  <span className="ml-2 text-xs text-gray-400">{item.date}</span>
-                                </td>
-                                <td className="px-3 py-2 text-right font-mono text-gray-800">
-                                  ₹{item.amount.toLocaleString('en-IN')}
-                                </td>
-                                <td className="px-3 py-2">
-                                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                                    isDinner ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
-                                  }`}>
-                                    {item.category}
-                                  </span>
-                                  {isDinner && (
-                                    <span className="ml-1 text-[10px] text-gray-400 line-through">{item.original_category}</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className={`inline-flex items-center gap-1 text-xs font-medium ${
-                                    item.confidence > 90 ? 'text-green-600' : item.confidence >= 70 ? 'text-amber-600' : 'text-red-600'
-                                  }`}>
-                                    <span className={`h-1.5 w-1.5 rounded-full ${
-                                      item.confidence > 90 ? 'bg-green-500' : item.confidence >= 70 ? 'bg-amber-500' : 'bg-red-500'
-                                    }`} />
-                                    {item.confidence}%
-                                  </span>
-                                </td>
-                              </tr>
+                              <React.Fragment key={item.id}>
+                                <tr
+                                  className={
+                                    isDinner ? 'bg-[#FEF3C7] border-l-[3px] border-l-[#F59E0B]'
+                                    : isGap ? 'bg-[#FEF9C3] border-l-[3px] border-l-[#EAB308]'
+                                    : 'hover:bg-gray-50'
+                                  }
+                                >
+                                  <td className="px-3 py-2 text-xs text-gray-400">{idx + 1}</td>
+                                  <td className="px-3 py-2">
+                                    <span className="font-medium text-gray-800">{item.description}</span>
+                                    <span className="ml-2 text-xs text-gray-400">{item.date}</span>
+                                  </td>
+                                  {/* Editable amount */}
+                                  <td className="px-3 py-2 text-right font-mono text-gray-800">
+                                    {editingAmountId === item.id ? (
+                                      <input
+                                        type="number"
+                                        autoFocus
+                                        defaultValue={item.amount}
+                                        onBlur={(e) => handleAmountChange(item.id, e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingAmountId(null); }}
+                                        className="w-24 rounded border border-gray-300 px-2 py-0.5 text-right text-xs font-mono"
+                                      />
+                                    ) : (
+                                      <button onClick={() => setEditingAmountId(item.id)} className="cursor-pointer hover:underline" title="Click to edit">
+                                        ₹{item.amount.toLocaleString('en-IN')}
+                                      </button>
+                                    )}
+                                  </td>
+                                  {/* Editable category */}
+                                  <td className="px-3 py-2">
+                                    {editingCategoryId === item.id ? (
+                                      <select
+                                        autoFocus
+                                        defaultValue={item.category}
+                                        onChange={(e) => handleCategoryChange(item.id, item.category, e.target.value)}
+                                        onBlur={() => setEditingCategoryId(null)}
+                                        className="rounded border border-gray-300 px-2 py-0.5 text-xs"
+                                      >
+                                        {EXPENSE_CATEGORIES.map(cat => (
+                                          <option key={cat} value={cat}>{cat}</option>
+                                        ))}
+                                        {!EXPENSE_CATEGORIES.includes(item.category as typeof EXPENSE_CATEGORIES[number]) && (
+                                          <option value={item.category}>{item.category}</option>
+                                        )}
+                                      </select>
+                                    ) : (
+                                      <button
+                                        onClick={() => setEditingCategoryId(item.id)}
+                                        className={`inline-block cursor-pointer rounded-full px-2 py-0.5 text-xs font-medium hover:ring-1 hover:ring-gray-300 ${
+                                          isDinner ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                                        }`}
+                                        title="Click to change category"
+                                      >
+                                        {item.category}
+                                      </button>
+                                    )}
+                                    {isDinner && editingCategoryId !== item.id && (
+                                      <span className="ml-1 text-[10px] text-gray-400 line-through">{item.original_category}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    <span className={`inline-flex items-center gap-1 text-xs font-medium ${
+                                      item.confidence > 90 ? 'text-green-600' : item.confidence >= 70 ? 'text-amber-600' : 'text-red-600'
+                                    }`}>
+                                      <span className={`h-1.5 w-1.5 rounded-full ${
+                                        item.confidence > 90 ? 'bg-green-500' : item.confidence >= 70 ? 'bg-amber-500' : 'bg-red-500'
+                                      }`} />
+                                      {item.confidence}%
+                                    </span>
+                                  </td>
+                                  {/* Expandable reasoning toggle */}
+                                  <td className="px-3 py-2 text-center">
+                                    {item.reasoning && (
+                                      <button
+                                        onClick={() => toggleItemExpansion(item.id)}
+                                        className="text-[11px] text-gray-400 hover:text-gray-700 underline decoration-dotted"
+                                      >
+                                        {isExpanded ? 'Hide' : 'Why?'}
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                                {isExpanded && item.reasoning && (
+                                  <tr className={isDinner ? 'bg-[#FEF3C7]/50' : 'bg-gray-50'}>
+                                    <td colSpan={6} className="px-4 py-2">
+                                      <div className="text-xs leading-relaxed text-gray-600">
+                                        {isDinner && item.original_category && (
+                                          <span className="mr-2 rounded bg-amber-200/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                                            {item.original_category} → {item.category}
+                                          </span>
+                                        )}
+                                        {item.reasoning}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
                             );
                           })}
                         </tbody>
@@ -533,30 +675,33 @@ export default function ChatPage() {
                             <td className="px-3 py-2 text-right font-mono font-semibold text-gray-800">
                               ₹{report.total_amount.toLocaleString('en-IN')}
                             </td>
-                            <td className="px-3 py-2" colSpan={2} />
+                            <td className="px-3 py-2" colSpan={3} />
                           </tr>
                         </tfoot>
                       </table>
                     </div>
 
-                    {/* Flagged item reasoning — PRE-EXPANDED */}
-                    {report.flagged_items.map((flagged) => (
-                      <div key={`flag-${flagged.id}`} className="rounded-lg border-l-[3px] border-l-[#F59E0B] bg-[#FEF3C7] p-3">
-                        <div className="mb-2 flex items-center gap-2">
-                          <span className="text-xs font-bold uppercase tracking-wide text-amber-700">
-                            Why {flagged.category}?
-                          </span>
-                          {flagged.original_category && (
-                            <span className="rounded bg-amber-200/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                              {flagged.original_category} → {flagged.category}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[13px] leading-relaxed text-amber-900">
-                          {flagged.reasoning}
+                    {/* AI disagreement nudge */}
+                    {nudge && (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                        <p className="text-sm text-blue-900">
+                          <strong>Ema suggests &ldquo;{nudge.aiCategory}&rdquo;</strong> &mdash; {nudge.aiReasoning}
                         </p>
+                        <div className="mt-2 flex gap-2">
+                          <button onClick={() => setNudge(null)}
+                            className="rounded bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-300">
+                            Keep Mine
+                          </button>
+                          <button onClick={() => {
+                            updateExpenseItem(nudge.itemId, { category: nudge.aiCategory });
+                            setNudge(null);
+                          }}
+                            className="rounded bg-[#1F8844] px-3 py-1 text-xs font-medium text-white hover:bg-[#186d36]">
+                            Use Ema&apos;s
+                          </button>
+                        </div>
                       </div>
-                    ))}
+                    )}
 
                     {/* Gap detection */}
                     {report.missing_items.map((gap) => (
@@ -625,5 +770,6 @@ function buildInitialMessage(report: {
   };
 }): string {
   const firstName = report.traveler.split(' ')[0];
-  return `Hey ${firstName}, welcome back from Mumbai. I've put together your expense report — ${report.summary.total_items} items, ${report.summary.auto_approve_count} auto-approved. Take a look.`;
+  const destination = report.trip_summary?.split(',')[0]?.trim() || 'your trip';
+  return `Hey ${firstName}, welcome back from ${destination}. I've put together your expense report — ${report.summary.total_items} items, ${report.summary.auto_approve_count} auto-approved. Take a look.`;
 }
