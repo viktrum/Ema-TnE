@@ -93,8 +93,8 @@ export async function POST(req: NextRequest) {
             controller.close();
 
             // Save assistant message — extract readable text if LLM returned JSON
-            const { response: extractedText } = extractChatResponse(fullResponse);
-            const saveContent = extractedText || fullResponse;
+            const { response: extractedText, parsed } = extractChatResponse(fullResponse);
+            const saveContent = parsed ? extractedText : fullResponse;
 
             await supabase.from("chat_messages").insert({
               user_id: user.id,
@@ -149,12 +149,12 @@ async function handleFallback(
   }
 
   if (!fallbackData) {
-    // Universal fallback — do NOT show submit button (gaps may be unresolved)
+    // Universal fallback — scenario-neutral (fires for any scenario with no DB match)
     fallbackData = {
-      text: "Let me focus on your expense report. I still need to confirm a few items — let's start with the taxi fare. What was the amount?",
+      text: "Let me focus on your expense report. I still need to confirm a few items before we can submit. Let me check what's pending.",
       response: {
         response:
-          "Let me focus on your expense report. I still need to confirm a few items — let's start with the taxi fare. What was the amount?",
+          "Let me focus on your expense report. I still need to confirm a few items before we can submit. Let me check what's pending.",
         actions: [],
         report_updated: false,
         show_submit_button: false,

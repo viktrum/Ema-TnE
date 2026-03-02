@@ -10,7 +10,7 @@ import MessageBubble from '@/components/chat/MessageBubble';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import { toast } from 'sonner';
-import { stripJsonFences, extractChatResponse } from '@/lib/utils/parseLLMResponse';
+import { extractChatResponse } from '@/lib/utils/parseLLMResponse';
 
 interface SidebarUser {
   name: string;
