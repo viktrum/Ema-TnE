@@ -36,7 +36,7 @@ export default function MessageBubble({
   const isAssistant = message.role === 'assistant';
 
   if (isAssistant) {
-    const isHTML = /^\s*<[a-z]/i.test(message.content);
+    const isHTML = /^\s*<(?:p|div|table|strong|em|ul|ol|li|h[1-6]|br|span|a)\b/i.test(message.content);
 
     return (
       <div className="flex items-start gap-3 px-4 py-2">

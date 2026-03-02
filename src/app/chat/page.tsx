@@ -36,7 +36,6 @@ export default function ChatPage() {
 
   const [sidebarUser, setSidebarUser] = useState<SidebarUser | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [isAssembling, setIsAssembling] = useState(true);
   const [firstMessageId, setFirstMessageId] = useState<string | null>(null);
   const [usedFallback, setUsedFallback] = useState(false);
 
@@ -84,7 +83,7 @@ export default function ChatPage() {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }
-  }, [messages, isStreaming, isAssembling]);
+  }, [messages, isStreaming, isAssemblyLoading]);
 
   // Initialize: fetch user, set scenario, assemble report
   useEffect(() => {
@@ -93,7 +92,7 @@ export default function ChatPage() {
     async function init() {
       resetChat();
       setActiveScenario(scenarioId);
-      setIsAssembling(true);
+      setAssemblyLoading(true);
 
       // Get current user
       const supabase = createClient();
@@ -135,7 +134,6 @@ export default function ChatPage() {
         if (cancelled) return;
 
         // Mark all steps done
-        stepTimers.forEach(clearTimeout);
         for (let i = 0; i < 5; i++) updateLoadingStep(i, 'done');
 
         const assembledReport = result.report;
@@ -158,7 +156,6 @@ export default function ChatPage() {
           timestamp: Date.now(),
         });
       } catch (err) {
-        stepTimers.forEach(clearTimeout);
         if (!cancelled) {
           console.error('Assembly error:', err);
           toast.error('Failed to assemble expense report.', {
@@ -166,9 +163,9 @@ export default function ChatPage() {
           });
         }
       } finally {
+        stepTimers.forEach(clearTimeout);
         if (!cancelled) {
           setAssemblyLoading(false);
-          setIsAssembling(false);
         }
       }
     }
@@ -465,6 +462,8 @@ export default function ChatPage() {
     router.push('/login');
   }, [router]);
 
+  const handleDismissSplash = useCallback(() => setShowBeforeSplash(false), [setShowBeforeSplash]);
+
   // Demo shortcut text for Ctrl+D — scenario-aware
   const DEMO_RESPONSES: Record<string, string> = {
     'mumbai-trip': 'Yes, ₹1,100. No receipt.',
@@ -538,7 +537,7 @@ export default function ChatPage() {
   return (
     <div className="flex h-screen w-full">
       {showBeforeSplash && (
-        <BeforeSplash onDismiss={() => setShowBeforeSplash(false)} />
+        <BeforeSplash onDismiss={handleDismissSplash} />
       )}
 
       {/* Left sidebar */}
@@ -549,7 +548,7 @@ export default function ChatPage() {
         {/* Header */}
         <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
           <span className="text-sm font-medium text-gray-500"># expense-reports</span>
-          {process.env.NODE_ENV === 'development' && !isAssembling && report && (
+          {process.env.NODE_ENV === 'development' && !isAssemblyLoading && report && (
             <span className={`rounded px-2 py-0.5 text-[10px] font-mono ${
               usedFallback ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
             }`}>
@@ -775,7 +774,7 @@ export default function ChatPage() {
         {/* Chat input — fixed at bottom */}
         <ChatInput
           onSend={handleSend}
-          disabled={isAssembling || isStreaming}
+          disabled={isAssemblyLoading || isStreaming}
           demoResponse={demoResponse}
           value={inputText}
           onChange={setInputText}
