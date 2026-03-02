@@ -120,6 +120,7 @@ export function FlaggedCardDecision({
   // Detect transition: loading → verified (green pulse + fadeIn on content)
   useEffect(() => {
     if (aiRecommendation && !prevAiRef.current) {
+      prevAiRef.current = aiRecommendation;
       setJustVerified(true);
       const timer = setTimeout(() => setJustVerified(false), 1000);
       return () => clearTimeout(timer);

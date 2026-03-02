@@ -91,6 +91,7 @@ export function FlaggedCardReview({
   // Detect transition: loading → verified
   useEffect(() => {
     if (aiRecommendation && !prevAiRef.current) {
+      prevAiRef.current = aiRecommendation;
       setJustVerified(true);
       const timer = setTimeout(() => setJustVerified(false), 1000);
       return () => clearTimeout(timer);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { trpc } from '@/lib/trpc/client';
@@ -51,6 +51,7 @@ export default function DashboardPage() {
   const [isActionPending, setIsActionPending] = useState(false);
   const [userName, setUserName] = useState('');
   const [aiFetched, setAiFetched] = useState(false);
+  const animationTimers = useRef<NodeJS.Timeout[]>([]);
 
   // tRPC
   const reportsQuery = trpc.dashboard.getReports.useQuery({});
@@ -169,8 +170,15 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Clear animation timers on unmount
+  useEffect(() => {
+    return () => {
+      animationTimers.current.forEach(clearTimeout);
+    };
+  }, []);
+
   // Approve with animation (respects prefers-reduced-motion)
-  const handleApprove = useCallback(async (id: number) => {
+  async function handleApprove(id: number) {
     setIsActionPending(true);
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -178,31 +186,35 @@ export default function DashboardPage() {
       await approveMutation.mutateAsync({ reportId: id });
 
       if (prefersReducedMotion) {
-        // Skip animation, remove immediately
         removeFlaggedItem(id, 'approve');
         toast.success('Approved — employee notified.');
         reportsQuery.refetch();
       } else {
         // Animation sequence: flash → overlay → collapse → remove
+        animationTimers.current.forEach(clearTimeout);
+        animationTimers.current = [];
         setAnimationPhase(id, 'flash');
-        setTimeout(() => setAnimationPhase(id, 'overlay'), 300);
-        setTimeout(() => setAnimationPhase(id, 'collapsing'), 1100);
-        setTimeout(() => {
-          removeFlaggedItem(id, 'approve');
-          toast.success('Approved — employee notified.');
-          reportsQuery.refetch();
-        }, 1400);
+        animationTimers.current.push(
+          setTimeout(() => setAnimationPhase(id, 'overlay'), 300),
+          setTimeout(() => setAnimationPhase(id, 'collapsing'), 1100),
+          setTimeout(() => {
+            removeFlaggedItem(id, 'approve');
+            toast.success('Approved — employee notified.');
+            reportsQuery.refetch();
+          }, 1400),
+        );
       }
     } catch {
+      animationTimers.current.forEach(clearTimeout);
+      animationTimers.current = [];
       setAnimationPhase(null, null);
       toast.error('Failed to approve.');
     } finally {
       setIsActionPending(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
 
-  const handleReject = useCallback(async (data: { reason: string; notes?: string }) => {
+  async function handleReject(data: { reason: string; notes?: string }) {
     if (!modalTargetId) return;
     setIsActionPending(true);
     try {
@@ -213,10 +225,9 @@ export default function DashboardPage() {
       reportsQuery.refetch();
     } catch { toast.error('Failed to reject.'); }
     finally { setIsActionPending(false); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalTargetId]);
+  }
 
-  const handleAsk = useCallback(async (question: string) => {
+  async function handleAsk(question: string) {
     if (!modalTargetId || !question.trim()) return;
     setIsActionPending(true);
     try {
@@ -225,14 +236,12 @@ export default function DashboardPage() {
       setActiveModal(null);
     } catch { toast.error('Failed to send question.'); }
     finally { setIsActionPending(false); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalTargetId]);
+  }
 
-  const handleLogout = useCallback(async () => {
+  async function handleLogout() {
     await supabase.auth.signOut();
     router.push('/login');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
 
   // Tier counts for briefing bar
   const tierCounts = useMemo(() => {
