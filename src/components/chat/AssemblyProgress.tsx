@@ -9,17 +9,17 @@ interface LoadingStep {
 
 export default function AssemblyProgress({ steps }: { steps: LoadingStep[] }) {
   return (
-    <div className="flex items-start gap-3 px-4 py-2">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1F8844] text-xs font-bold text-white">
+    <div className="flex items-start gap-3 px-4 py-2 animate-in fade-in duration-300">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1F8844] mt-0.5 text-[10px] font-bold text-white">
         E
       </div>
-      <div className="rounded-lg bg-[#F3F4F6] px-4 py-3">
+      <div className="rounded-xl border border-gray-200/80 bg-white px-5 py-4 shadow-sm max-w-sm">
         <p className="mb-2 text-sm font-medium text-gray-700">
           Assembling your report...
         </p>
-        <ul className="space-y-1.5">
+        <ul className="space-y-2.5">
           {steps.map((step, i) => (
-            <li key={i} className="flex items-center gap-2 text-sm">
+            <li key={i} className="flex items-center gap-2 text-[13px]">
               {step.status === 'done' ? (
                 <Check className="h-4 w-4 text-[#1F8844]" />
               ) : step.status === 'active' ? (
@@ -38,6 +38,9 @@ export default function AssemblyProgress({ steps }: { steps: LoadingStep[] }) {
               >
                 {step.label}
               </span>
+              {step.status === 'done' && (
+                <span className="text-[10px] text-gray-400">done</span>
+              )}
             </li>
           ))}
         </ul>

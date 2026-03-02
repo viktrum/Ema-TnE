@@ -57,10 +57,13 @@ export default function BeforeSplash({ onDismiss }: BeforeSplashProps) {
           </div>
         </div>
 
-        <div className="absolute inset-0 flex flex-col items-center justify-center rounded-2xl bg-white/80">
+        <div className="absolute inset-0 flex flex-col items-center justify-center rounded-2xl bg-white/80 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[#1F8844] text-lg font-bold text-white">
+            E
+          </div>
           <p className="text-4xl font-bold text-gray-900">15 fields.</p>
           <p className="text-4xl font-bold text-gray-900">20 minutes.</p>
-          <p className="mt-4 text-lg text-gray-500">That was before.</p>
+          <p className="mt-4 text-lg text-[#1F8844]">That was before.</p>
           <p className="mt-1 text-sm text-gray-400">Click anywhere to continue</p>
         </div>
       </div>
