@@ -193,13 +193,15 @@ E7: Add item (chai at airport → asks for details or adds)
 
 ---
 
-## Current State (End of Session 2)
-- Phase 1: ✅ Merged to develop (PR #1)
-- Phase 2: ✅ Merged to develop (PR #2) — user concerned about quality
-- Phase 3: ✅ Merged to develop (PR #3)
-- Phase 3.5: ✅ Merged to develop (PR #4) — bidirectional realtime working
-- Phase 4-6: Not started
-- Deep research: Results available, deferred to Phase 5/6
+## Current State (End of Session 3)
+- Phase 1: ✅ Merged (PR #1)
+- Phase 2: ✅ Merged (PR #2)
+- Phase 3: ✅ Merged (PR #3)
+- Phase 3.5: ✅ Merged (PR #4)
+- Phase 3.8: ✅ Merged (PR #5 + hotfix #6 + docs #7)
+- Phase 4: ✅ Merged (PR #8) — scenario selector, edit flows, expandable reasoning
+- Phase 5: ✅ Merged (PR #9) — splash, markdown, progress steps, mapper fix, visual polish
+- Phase 6: 🔄 In progress (eval authoring, gate tests pending)
 - CodeRabbit/Greptile GitHub Apps: NOT installed
 
 **Deferred to Phase 5 (Polish):**
