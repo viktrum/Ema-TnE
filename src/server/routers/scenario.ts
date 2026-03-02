@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { protectedProcedure, router } from "@/server/trpc/init";
+import { protectedProcedure, publicProcedure, router } from "@/server/trpc/init";
 
 export const scenarioRouter = router({
   getById: protectedProcedure
@@ -15,7 +15,7 @@ export const scenarioRouter = router({
       return data;
     }),
 
-  list: protectedProcedure.query(async ({ ctx }) => {
+  list: publicProcedure.query(async ({ ctx }) => {
     const { data, error } = await ctx.supabase
       .from("scenarios")
       .select("id, name, destination, start_date, end_date, trip_type, purpose, transactions, context");

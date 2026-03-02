@@ -74,7 +74,7 @@ export default function ScenarioSelectorPage() {
                   )}
                   <div className="mt-4">
                     <button
-                      onClick={() => router.push(`/login?next=/chat?scenario=${s.id}`)}
+                      onClick={() => router.push(`/login?next=${encodeURIComponent(`/chat?scenario=${s.id}`)}`)}
                       className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#1F8844] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#186d36]"
                     >
                       Start Demo
@@ -89,7 +89,7 @@ export default function ScenarioSelectorPage() {
 
         <div className="mt-8 flex justify-center">
           <button
-            onClick={() => router.push('/login?next=/dashboard')}
+            onClick={() => router.push(`/login?next=${encodeURIComponent('/dashboard')}`)}
             className="flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-[#1F8844]"
           >
             <LayoutDashboard className="h-4 w-4" />

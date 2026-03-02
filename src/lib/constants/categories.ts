@@ -1,15 +1,16 @@
+/** Categories matching the LLM categorize prompt in src/lib/llm/prompts/categorize.ts */
 export const EXPENSE_CATEGORIES = [
-  'Airlines/Flights',
-  'Flights',
-  'Hotels/Accommodation',
+  'Domestic Flight',
+  'International Flight',
   'Accommodation',
-  'Ground Transport',
   'Local Transport',
   'Airport Transfer',
+  'Personal Meal',
   'Client Entertainment',
-  'Meals',
-  'Conference/Events',
+  'Meals & Beverages',
+  'Conference/Event',
   'Office Supplies',
+  'Communication',
   'Miscellaneous',
 ] as const;
 

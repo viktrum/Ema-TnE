@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -60,6 +60,7 @@ function getRedirectPath(role: UserRole): string {
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loadingEmail, setLoadingEmail] = useState<string | null>(null);
 
   async function handleLogin(user: DemoUser) {
@@ -83,7 +84,9 @@ export default function LoginPage() {
       }
 
       toast.success(`Welcome, ${user.name}!`);
-      router.push(getRedirectPath(user.role));
+      const next = searchParams.get("next");
+      const redirectTo = next && next.startsWith("/") ? next : getRedirectPath(user.role);
+      router.push(redirectTo);
       router.refresh();
     } catch {
       toast.error("Something went wrong", {
