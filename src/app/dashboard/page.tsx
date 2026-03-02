@@ -1,60 +1,49 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { trpc } from '@/lib/trpc/client';
 import { useDashboardStore } from '@/stores/useDashboardStore';
 import { toast } from 'sonner';
-import {
-  CheckCircle,
-  XCircle,
-  MessageCircle,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  AlertTriangle,
-  Shield,
-  Inbox,
-  LogOut,
-} from 'lucide-react';
+import { LogOut } from 'lucide-react';
 
-const REJECT_REASONS = [
-  'Policy Violation',
-  'Insufficient Documentation',
-  'Amount Exceeds Limit',
-  'Duplicate Expense',
-  'Other',
-] as const;
-
-const SEVERITY_STYLES: Record<string, string> = {
-  HIGH: 'bg-red-100 text-red-700 border-red-200',
-  MEDIUM: 'bg-amber-100 text-amber-700 border-amber-200',
-  LOW: 'bg-gray-100 text-gray-600 border-gray-200',
-};
+import { groupFlaggedItems } from '@/lib/utils/classifyFlaggedItems';
+import { EmaBriefingBar } from '@/components/dashboard/EmaBriefingBar';
+import { FlaggedPanel } from '@/components/dashboard/FlaggedPanel';
+import { NorthStarBanner } from '@/components/dashboard/NorthStarBanner';
+import { StatsPanel } from '@/components/dashboard/StatsPanel';
+import { RejectModal } from '@/components/dashboard/RejectModal';
+import { AskModal } from '@/components/dashboard/AskModal';
 
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
 
   const {
+    activeView,
     autoApproved,
     flagged,
-    expandedFlagId,
+    heroMetric,
+    health,
+    expandedFlagIds,
     activeModal,
     modalTargetId,
+    animatingApprovalId,
+    animationPhase,
     isLoading,
+    setActiveView,
     setAutoApproved,
     setFlagged,
-    setExpandedFlagId,
+    toggleExpandedFlag,
+    initExpandedFlags,
     setActiveModal,
+    setAnimationPhase,
     setLoading,
     removeFlaggedItem,
+    addToast,
   } = useDashboardStore();
 
-  const [rejectReason, setRejectReason] = useState<string>(REJECT_REASONS[0]);
-  const [rejectNotes, setRejectNotes] = useState('');
-  const [askQuestion, setAskQuestion] = useState('');
   const [isActionPending, setIsActionPending] = useState(false);
   const [userName, setUserName] = useState('');
 
@@ -92,7 +81,7 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync data
+  // Sync data from tRPC
   useEffect(() => {
     if (!reportsQuery.data) return;
     const { autoApproved: autoData, flagged: flaggedData } = reportsQuery.data;
@@ -109,13 +98,17 @@ export default function DashboardPage() {
       featuredId: flaggedData[0]?.id ?? null,
       items: flaggedData,
     });
-    if (flaggedData.length > 0 && expandedFlagId === null) {
-      setExpandedFlagId(flaggedData[0].id);
+
+    // Auto-expand Tier 1 items
+    const tierGroups = groupFlaggedItems(flaggedData);
+    const decisionGroup = tierGroups.find((g) => g.tier === 'decision');
+    if (decisionGroup && expandedFlagIds.size === 0) {
+      initExpandedFlags(decisionGroup.items.map((i) => i.id));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportsQuery.data]);
 
-  // Realtime
+  // Realtime subscriptions
   useEffect(() => {
     const reportsChannel = supabase
       .channel('dashboard-reports-changes')
@@ -142,53 +135,86 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Actions
+  // Approve with animation (respects prefers-reduced-motion)
   const handleApprove = useCallback(async (id: number) => {
     setIsActionPending(true);
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
     try {
       await approveMutation.mutateAsync({ reportId: id });
-      toast.success('Approved.');
-      removeFlaggedItem(id);
-      reportsQuery.refetch();
-    } catch { toast.error('Failed to approve.'); }
-    finally { setIsActionPending(false); }
+
+      if (prefersReducedMotion) {
+        // Skip animation, remove immediately
+        removeFlaggedItem(id, 'approve');
+        toast.success('Approved — employee notified.');
+        reportsQuery.refetch();
+      } else {
+        // Animation sequence: flash → overlay → collapse → remove
+        setAnimationPhase(id, 'flash');
+        setTimeout(() => setAnimationPhase(id, 'overlay'), 300);
+        setTimeout(() => setAnimationPhase(id, 'collapsing'), 1100);
+        setTimeout(() => {
+          removeFlaggedItem(id, 'approve');
+          toast.success('Approved — employee notified.');
+          reportsQuery.refetch();
+        }, 1400);
+      }
+    } catch {
+      setAnimationPhase(null, null);
+      toast.error('Failed to approve.');
+    } finally {
+      setIsActionPending(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleReject = useCallback(async () => {
+  const handleReject = useCallback(async (data: { reason: string; notes?: string }) => {
     if (!modalTargetId) return;
     setIsActionPending(true);
     try {
-      await rejectMutation.mutateAsync({ reportId: modalTargetId, reason: rejectReason, notes: rejectNotes || undefined });
+      await rejectMutation.mutateAsync({ reportId: modalTargetId, reason: data.reason, notes: data.notes });
       toast.success('Rejected.');
-      removeFlaggedItem(modalTargetId);
+      removeFlaggedItem(modalTargetId, 'reject');
       setActiveModal(null);
-      setRejectReason(REJECT_REASONS[0]);
-      setRejectNotes('');
       reportsQuery.refetch();
     } catch { toast.error('Failed to reject.'); }
     finally { setIsActionPending(false); }
-    // eslint-disable-next-line react-hooks-exhaustive-deps
-  }, [modalTargetId, rejectReason, rejectNotes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalTargetId]);
 
-  const handleAsk = useCallback(async () => {
-    if (!modalTargetId || !askQuestion.trim()) return;
+  const handleAsk = useCallback(async (question: string) => {
+    if (!modalTargetId || !question.trim()) return;
     setIsActionPending(true);
     try {
-      await askMutation.mutateAsync({ reportId: modalTargetId, question: askQuestion });
+      await askMutation.mutateAsync({ reportId: modalTargetId, question });
       toast.success('Question sent to employee.');
       setActiveModal(null);
-      setAskQuestion('');
     } catch { toast.error('Failed to send question.'); }
     finally { setIsActionPending(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalTargetId, askQuestion]);
+  }, [modalTargetId]);
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
     router.push('/login');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Tier counts for briefing bar
+  const tierCounts = useMemo(() => {
+    const groups = groupFlaggedItems(flagged.items || []);
+    return {
+      decision: groups.find((g) => g.tier === 'decision')?.items.length ?? 0,
+      review: groups.find((g) => g.tier === 'review')?.items.length ?? 0,
+      autoHandled: groups.find((g) => g.tier === 'auto-handled')?.items.length ?? 0,
+    };
+  }, [flagged.items]);
+
+  // Default ask question for the modal
+  const modalTargetItem = flagged.items?.find((i) => i.id === modalTargetId);
+  const defaultAskQuestion = modalTargetItem
+    ? `Can you provide additional context for this expense? (${modalTargetItem.flag_reason || 'flagged for review'})`
+    : '';
 
   if (isLoading) {
     return (
@@ -198,18 +224,38 @@ export default function DashboardPage() {
     );
   }
 
-  const flaggedItems = flagged.items || [];
-  const pendingCount = flaggedItems.length;
-
   return (
     <div className="flex h-screen flex-col bg-[#F9FAFB]">
-      {/* Top bar */}
+      {/* Header */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1F8844] text-xs font-bold text-white">E</div>
           <span className="text-sm font-semibold text-gray-800">Ema T&E</span>
           <span className="text-xs text-gray-400">|</span>
-          <span className="text-sm text-gray-500">Manager Review</span>
+
+          {/* View toggle */}
+          <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+            <button
+              onClick={() => setActiveView('manager')}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                activeView === 'manager'
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Manager
+            </button>
+            <button
+              onClick={() => setActiveView('admin')}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                activeView === 'admin'
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Admin
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <button onClick={() => router.push('/chat')} className="text-xs text-gray-500 hover:text-[#1F8844]">
@@ -222,222 +268,86 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Stats bar — compact, not a hero */}
-      <div className="border-b border-gray-100 bg-white px-6 py-3">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <Inbox className="h-4 w-4 text-amber-500" />
-            <span className="text-sm font-semibold text-gray-800">{pendingCount} items need your review</span>
-          </div>
-          <div className="h-4 w-px bg-gray-200" />
-          <div className="flex items-center gap-4 text-xs text-gray-500">
-            <span>{autoApproved.count} auto-approved ({autoApproved.percentage}%)</span>
-            <span>·</span>
-            <span>{autoApproved.count + pendingCount} total this month</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Inbox */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="mx-auto max-w-3xl space-y-3">
-          {flaggedItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-              <CheckCircle className="mb-3 h-10 w-10 text-green-400" />
-              <p className="text-sm font-medium">All clear. No items need your review.</p>
-            </div>
+        <div className="mx-auto max-w-4xl space-y-4">
+          {activeView === 'manager' ? (
+            <>
+              {/* Zone 1: Ema's Briefing */}
+              <EmaBriefingBar
+                decisionCount={tierCounts.decision}
+                reviewCount={tierCounts.review}
+                autoHandledCount={tierCounts.autoHandled}
+                autoApprovedCount={autoApproved.count}
+                totalCount={autoApproved.count + (flagged.items?.length || 0)}
+                userName={userName}
+              />
+
+              {/* Zone 2: Three-tier inbox */}
+              <FlaggedPanel
+                items={flagged.items || []}
+                expandedFlagIds={expandedFlagIds}
+                onToggleExpand={toggleExpandedFlag}
+                onApprove={handleApprove}
+                onReject={(id) => setActiveModal('reject', id)}
+                onAsk={(id) => setActiveModal('ask', id)}
+                animatingApprovalId={animatingApprovalId}
+                animationPhase={animationPhase}
+                disabled={isActionPending}
+              />
+            </>
           ) : (
-            flaggedItems.map((item) => {
-              const isExpanded = expandedFlagId === item.id;
-              const severity = (item as { flag_severity?: string }).flag_severity || 'MEDIUM';
-              const reasoning = typeof (item as { reasoning?: unknown }).reasoning === 'object' && (item as { reasoning?: { summary?: string } }).reasoning
-                ? ((item as { reasoning?: { summary?: string } }).reasoning?.summary || '')
-                : String((item as { reasoning?: unknown }).reasoning || '');
-              const sources: string[] = (item as { sources?: string[] }).sources || [];
+            <>
+              {/* Zone A: Hero Banner */}
+              <NorthStarBanner
+                heroMetric={heroMetric}
+                autoApprovedCount={autoApproved.count}
+                autoApprovedRate={autoApproved.percentage}
+                policyCompliance={health.stats.find((s) => s.label === 'Policy Compliance')?.value?.toString() || '96%'}
+              />
 
-              return (
-                <div
-                  key={item.id}
-                  className={`rounded-xl border bg-white transition-shadow ${
-                    isExpanded ? 'shadow-md border-gray-300' : 'shadow-sm border-gray-200 hover:shadow-md'
-                  }`}
-                >
-                  {/* Collapsed header — always visible */}
-                  <button
-                    type="button"
-                    onClick={() => setExpandedFlagId(isExpanded ? null : item.id)}
-                    className="flex w-full items-center gap-4 px-5 py-4 text-left"
-                  >
-                    {/* Severity indicator */}
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-                      severity === 'HIGH' ? 'bg-red-100' : severity === 'MEDIUM' ? 'bg-amber-100' : 'bg-gray-100'
-                    }`}>
-                      <AlertTriangle className={`h-4 w-4 ${
-                        severity === 'HIGH' ? 'text-red-600' : severity === 'MEDIUM' ? 'text-amber-600' : 'text-gray-500'
-                      }`} />
-                    </div>
+              {/* Zone B: Health Stats + Flag Distribution */}
+              <StatsPanel
+                stats={health.stats}
+                flagTypes={health.flagTypes}
+                trend={health.trend}
+              />
 
-                    {/* Item info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-gray-800 truncate">
-                          {item.traveler_name}
-                        </span>
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${SEVERITY_STYLES[severity]}`}>
-                          {severity}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-gray-500 truncate">
-                        {item.flag_reason || `${item.destination} · ₹${item.total_amount?.toLocaleString('en-IN')}`}
-                      </p>
-                    </div>
-
-                    {/* Amount + expand icon */}
-                    <span className="shrink-0 text-sm font-mono font-semibold text-gray-700">
-                      ₹{item.total_amount?.toLocaleString('en-IN')}
-                    </span>
-                    {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
-                  </button>
-
-                  {/* Expanded detail */}
-                  {isExpanded && (
-                    <div className="border-t border-gray-100 px-5 pb-4 pt-3">
-                      {/* Context row */}
-                      <div className="mb-3 flex items-center gap-3 text-xs text-gray-500">
-                        <span>{item.destination}</span>
-                        <span>·</span>
-                        <span>{item.dates}</span>
-                        <span>·</span>
-                        <span>{item.avg_confidence}% confidence</span>
-                      </div>
-
-                      {/* AI Reasoning */}
-                      {reasoning && (
-                        <div className="mb-4 rounded-lg bg-gray-50 p-3">
-                          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
-                            <Shield className="h-3 w-3" />
-                            AI Reasoning
-                          </div>
-                          <p className="text-[13px] leading-relaxed text-gray-700">{reasoning}</p>
-                        </div>
-                      )}
-
-                      {/* Source badges */}
-                      {sources.length > 0 && (
-                        <div className="mb-4 flex flex-wrap gap-1.5">
-                          {sources.map((source) => (
-                            <span key={source} className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
-                              {source}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Action buttons */}
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleApprove(item.id)}
-                          disabled={isActionPending}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-[#1F8844] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#176B36] disabled:opacity-50"
-                        >
-                          <CheckCircle className="h-3.5 w-3.5" /> Approve
-                        </button>
-                        <button
-                          onClick={() => { setActiveModal('reject', item.id); }}
-                          disabled={isActionPending}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-4 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
-                        >
-                          <XCircle className="h-3.5 w-3.5" /> Reject
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAskQuestion(`Can you provide additional context for this expense? (${item.flag_reason || 'flagged for review'})`);
-                            setActiveModal('ask', item.id);
-                          }}
-                          disabled={isActionPending}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          <MessageCircle className="h-3.5 w-3.5" /> Ask Employee
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
+              {/* Zone C: Flagged items (read-only) */}
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-gray-700">Flagged Items (Read-Only)</h3>
+                <FlaggedPanel
+                  items={flagged.items || []}
+                  expandedFlagIds={expandedFlagIds}
+                  onToggleExpand={toggleExpandedFlag}
+                  onApprove={() => {}}
+                  onReject={() => {}}
+                  onAsk={() => {}}
+                  animatingApprovalId={null}
+                  animationPhase={null}
+                  readOnly
+                />
+              </div>
+            </>
           )}
         </div>
       </div>
 
-      {/* Reject Modal */}
+      {/* Modals */}
       {activeModal === 'reject' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="mb-4 text-sm font-semibold text-gray-800">Reject Expense</h3>
-            <div className="mb-3">
-              <label className="mb-1 block text-xs font-medium text-gray-600">Reason</label>
-              <select
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-[#1F8844] focus:outline-none focus:ring-1 focus:ring-[#1F8844]"
-              >
-                {REJECT_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            <div className="mb-4">
-              <label className="mb-1 block text-xs font-medium text-gray-600">Notes (optional)</label>
-              <textarea
-                value={rejectNotes}
-                onChange={(e) => setRejectNotes(e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-[#1F8844] focus:outline-none focus:ring-1 focus:ring-[#1F8844]"
-                placeholder="Add context for the employee..."
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setActiveModal(null)} className="rounded-lg px-4 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50">
-                Cancel
-              </button>
-              <button
-                onClick={handleReject}
-                disabled={isActionPending}
-                className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {isActionPending ? 'Rejecting...' : 'Confirm Reject'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <RejectModal
+          onConfirm={handleReject}
+          onCancel={() => setActiveModal(null)}
+          isPending={isActionPending}
+        />
       )}
-
-      {/* Ask Employee Modal */}
       {activeModal === 'ask' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="mb-4 text-sm font-semibold text-gray-800">Ask Employee</h3>
-            <div className="mb-4">
-              <label className="mb-1 block text-xs font-medium text-gray-600">Your question</label>
-              <textarea
-                value={askQuestion}
-                onChange={(e) => setAskQuestion(e.target.value)}
-                rows={4}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-[#1F8844] focus:outline-none focus:ring-1 focus:ring-[#1F8844]"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setActiveModal(null)} className="rounded-lg px-4 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50">
-                Cancel
-              </button>
-              <button
-                onClick={handleAsk}
-                disabled={isActionPending || !askQuestion.trim()}
-                className="rounded-lg bg-[#1F8844] px-4 py-2 text-xs font-medium text-white hover:bg-[#176B36] disabled:opacity-50"
-              >
-                {isActionPending ? 'Sending...' : 'Send Question'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AskModal
+          defaultQuestion={defaultAskQuestion}
+          onConfirm={handleAsk}
+          onCancel={() => setActiveModal(null)}
+          isPending={isActionPending}
+        />
       )}
     </div>
   );

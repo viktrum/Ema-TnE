@@ -19,7 +19,16 @@ export const dashboardRouter = router({
       if (error) return { autoApproved: [], flagged: [] };
 
       const autoApproved = (data || []).filter(r => r.status === "auto_approved");
-      const flagged = (data || []).filter(r => r.status === "flagged");
+
+      // Deduplicate flagged items: keep latest row per scenario_id (data is ordered by created_at DESC)
+      const flaggedRaw = (data || []).filter(r => r.status === "flagged");
+      const seenKeys = new Set<string>();
+      const flagged = flaggedRaw.filter(r => {
+        const key = `${r.scenario_id || ''}::${r.traveler_name || ''}`;
+        if (seenKeys.has(key)) return false;
+        seenKeys.add(key);
+        return true;
+      });
 
       return { autoApproved, flagged };
     }),

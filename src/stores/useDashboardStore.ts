@@ -58,8 +58,11 @@ interface Toast {
   type: 'success' | 'error' | 'info';
 }
 
+type AnimationPhase = 'flash' | 'overlay' | 'collapsing' | null;
+
 interface DashboardState {
   activeScenario: string;
+  activeView: 'manager' | 'admin';
 
   heroMetric: { value: string; label: string; industryAvg: string };
 
@@ -67,27 +70,33 @@ interface DashboardState {
   flagged: { count: number; percentage: number; featuredId: number | null; items: FlaggedItem[] };
   health: { stats: HealthStat[]; flagTypes: FlagTypeBar[]; trend: TrendPoint[] };
 
-  expandedFlagId: number | null;
+  expandedFlagIds: Set<number>;
   activeModal: 'reject' | 'ask' | null;
   modalTargetId: number | null;
+  animatingApprovalId: number | null;
+  animationPhase: AnimationPhase;
   toasts: Toast[];
   isLoading: boolean;
 
   // Actions
   setActiveScenario: (scenario: string) => void;
+  setActiveView: (view: 'manager' | 'admin') => void;
   setAutoApproved: (data: DashboardState['autoApproved']) => void;
   setFlagged: (data: DashboardState['flagged']) => void;
   setHealth: (data: DashboardState['health']) => void;
-  setExpandedFlagId: (id: number | null) => void;
+  toggleExpandedFlag: (id: number) => void;
+  initExpandedFlags: (ids: number[]) => void;
   setActiveModal: (modal: DashboardState['activeModal'], targetId?: number | null) => void;
+  setAnimationPhase: (id: number | null, phase: AnimationPhase) => void;
   addToast: (toast: Toast) => void;
   removeToast: (id: string) => void;
   setLoading: (loading: boolean) => void;
-  removeFlaggedItem: (id: number) => void;
+  removeFlaggedItem: (id: number, action: 'approve' | 'reject' | 'ask') => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
   activeScenario: 'mumbai-trip',
+  activeView: 'manager',
 
   heroMetric: { value: '4 hours', label: 'Trip-end to submitted report', industryAvg: '8+ days' },
 
@@ -117,30 +126,44 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     ],
   },
 
-  expandedFlagId: null,
+  expandedFlagIds: new Set<number>(),
   activeModal: null,
   modalTargetId: null,
+  animatingApprovalId: null,
+  animationPhase: null,
   toasts: [],
   isLoading: true,
 
   setActiveScenario: (scenario) => set({ activeScenario: scenario }),
+  setActiveView: (view) => set({ activeView: view }),
   setAutoApproved: (data) => set({ autoApproved: data }),
   setFlagged: (data) => set({ flagged: data }),
   setHealth: (data) => set({ health: data }),
-  setExpandedFlagId: (id) => set({ expandedFlagId: id }),
+  toggleExpandedFlag: (id) =>
+    set((state) => {
+      const next = new Set(state.expandedFlagIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { expandedFlagIds: next };
+    }),
+  initExpandedFlags: (ids) => set({ expandedFlagIds: new Set(ids) }),
   setActiveModal: (modal, targetId = null) => set({ activeModal: modal, modalTargetId: targetId }),
+  setAnimationPhase: (id, phase) => set({ animatingApprovalId: id, animationPhase: phase }),
   addToast: (toast) => set((state) => ({ toasts: [...state.toasts, toast] })),
   removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
   setLoading: (loading) => set({ isLoading: loading }),
-  removeFlaggedItem: (id) => set((state) => ({
-    flagged: {
-      ...state.flagged,
-      count: state.flagged.count - 1,
-      items: state.flagged.items.filter((item) => item.id !== id),
-    },
-    autoApproved: {
-      ...state.autoApproved,
-      count: state.autoApproved.count + 1,
-    },
-  })),
+  removeFlaggedItem: (id, action) =>
+    set((state) => ({
+      flagged: {
+        ...state.flagged,
+        count: state.flagged.count - 1,
+        items: state.flagged.items.filter((item) => item.id !== id),
+      },
+      autoApproved: {
+        ...state.autoApproved,
+        count: action === 'approve' ? state.autoApproved.count + 1 : state.autoApproved.count,
+      },
+      animatingApprovalId: null,
+      animationPhase: null,
+    })),
 }));
