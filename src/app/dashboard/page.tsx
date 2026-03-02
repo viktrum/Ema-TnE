@@ -59,15 +59,13 @@ export default function DashboardPage() {
   const askMutation = trpc.approval.askEmployee.useMutation();
   const aiMutation = trpc.dashboard.getAiRecommendations.useMutation({
     onSuccess: (data) => {
-      console.log('[AI Mutation] onSuccess, keys:', data ? Object.keys(data).length : 'null');
       if (data && Object.keys(data).length > 0) {
         setAiRecommendations(data);
       } else {
         setAiLoading(false);
       }
     },
-    onError: (err) => {
-      console.error('[AI Mutation] onError:', err.message);
+    onError: () => {
       setAiLoading(false);
     },
   });
@@ -135,7 +133,6 @@ export default function DashboardPage() {
       const decisionIds = items
         .filter((i) => classifyFlaggedItem(i) === 'decision')
         .map((i) => i.id);
-      console.log('[AI Mutation] Firing for decision-tier IDs:', decisionIds);
       setAiFetched(true);
       if (decisionIds.length > 0) {
         setAiLoading(true);
