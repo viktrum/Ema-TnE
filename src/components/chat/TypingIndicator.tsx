@@ -20,22 +20,25 @@ export default function TypingIndicator() {
           }
         `}
       </style>
-      <div className="flex items-start gap-3 px-4 py-2">
+      <div className="flex items-start gap-3 px-4 py-3">
         {/* Ema Avatar */}
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1F8844] text-xs font-bold text-white">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1F8844] mt-0.5 text-[10px] font-bold text-white">
           E
         </div>
 
-        <div className="flex items-center gap-1 rounded-lg bg-[#F3F4F6] px-4 py-3">
-          <span className="typing-dot h-2 w-2 rounded-full bg-gray-400" />
-          <span
-            className="typing-dot h-2 w-2 rounded-full bg-gray-400"
-            style={{ animationDelay: '0.2s' }}
-          />
-          <span
-            className="typing-dot h-2 w-2 rounded-full bg-gray-400"
-            style={{ animationDelay: '0.4s' }}
-          />
+        <div className="flex items-center gap-2 rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm">
+          <div className="flex items-center gap-1">
+            <span className="typing-dot h-2 w-2 rounded-full bg-[#1F8844]/60" />
+            <span
+              className="typing-dot h-2 w-2 rounded-full bg-[#1F8844]/60"
+              style={{ animationDelay: '0.2s' }}
+            />
+            <span
+              className="typing-dot h-2 w-2 rounded-full bg-[#1F8844]/60"
+              style={{ animationDelay: '0.4s' }}
+            />
+          </div>
+          <span className="text-[12px] text-gray-400">Ema is thinking...</span>
         </div>
       </div>
     </>

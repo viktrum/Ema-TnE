@@ -5,17 +5,17 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { trpc } from '@/lib/trpc/client';
 import { useChatStore } from '@/stores/useChatStore';
-import Sidebar from '@/components/chat/Sidebar';
 import MessageBubble from '@/components/chat/MessageBubble';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import AssemblyProgress from '@/components/chat/AssemblyProgress';
 import BeforeSplash from '@/components/chat/BeforeSplash';
+import ExpenseReportCard from '@/components/chat/ExpenseReportCard';
 import { toast } from 'sonner';
 import { extractChatResponse } from '@/lib/utils/parseLLMResponse';
-import { EXPENSE_CATEGORIES } from '@/lib/constants/categories';
+import { LogOut, CheckCircle, Loader2 } from 'lucide-react';
 
-interface SidebarUser {
+interface ChatUser {
   name: string;
   role: string;
   avatar_initials: string;
@@ -34,7 +34,7 @@ export default function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const [sidebarUser, setSidebarUser] = useState<SidebarUser | null>(null);
+  const [chatUser, setChatUser] = useState<ChatUser | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [firstMessageId, setFirstMessageId] = useState<string | null>(null);
   const [usedFallback, setUsedFallback] = useState(false);
@@ -72,8 +72,7 @@ export default function ChatPage() {
   const submitMutation = trpc.report.submit.useMutation();
   const reCategorize = trpc.categorize.reCategorize.useMutation();
 
-  // Phase 4: Edit flows + expandable reasoning state
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  // Edit flows state
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
   const [nudge, setNudge] = useState<{ itemId: string; aiCategory: string; aiReasoning: string } | null>(null);
@@ -108,9 +107,9 @@ export default function ChatPage() {
 
       setUserId(user.id);
 
-      // Build sidebar user from user metadata
+      // Build chat user from user metadata
       const meta = user.user_metadata || {};
-      setSidebarUser({
+      setChatUser({
         name: meta.full_name || meta.name || user.email?.split('@')[0] || 'User',
         role: meta.role || 'Employee',
         avatar_initials: getInitials(meta.full_name || meta.name || user.email || 'U'),
@@ -139,10 +138,6 @@ export default function ChatPage() {
         if (result._fallback) setUsedFallback(true);
         setReport(assembledReport);
 
-        // Pre-expand flagged items reasoning
-        const flaggedIds = new Set(assembledReport.flagged_items.map((f: { id: string }) => f.id));
-        setExpandedItems(flaggedIds);
-
         // Build the initial AI message with expense table HTML and gap question
         const initialContent = buildInitialMessage(assembledReport);
         const msgId = generateId();
@@ -156,7 +151,6 @@ export default function ChatPage() {
         });
       } catch (err) {
         if (!cancelled) {
-          console.error('Assembly error:', err);
           toast.error('Failed to assemble expense report.', {
             description: err instanceof Error ? err.message : String(err),
           });
@@ -471,17 +465,7 @@ export default function ChatPage() {
   };
   const demoResponse = DEMO_RESPONSES[scenarioId];
 
-  // Phase 4: Toggle reasoning expansion
-  const toggleItemExpansion = useCallback((itemId: string) => {
-    setExpandedItems(prev => {
-      const next = new Set(prev);
-      if (next.has(itemId)) next.delete(itemId);
-      else next.add(itemId);
-      return next;
-    });
-  }, []);
-
-  // Phase 4: Handle category change with AI nudge
+  // Handle category change with AI nudge
   async function handleCategoryChange(itemId: string, currentCategory: string, newCategory: string) {
     if (newCategory === currentCategory) return;
     setEditingCategoryId(null);
@@ -533,20 +517,31 @@ export default function ChatPage() {
     updateReportTotal();
   }
 
+  // Shortened trip label for header pill
+  const tripLabel = report?.trip_summary?.split(',')[0]?.trim() || scenarioId.replace(/-/g, ' ');
+
   return (
-    <div className="flex h-screen w-full">
+    <div className="flex h-screen w-full flex-col bg-[#F9FAFB]">
       {showBeforeSplash && (
         <BeforeSplash onDismiss={handleDismissSplash} />
       )}
 
-      {/* Left sidebar */}
-      <Sidebar user={sidebarUser} onLogout={handleLogout} />
+      {/* Header */}
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
+        <div className="flex items-center gap-3">
+          {/* Ema logo */}
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1F8844] text-sm font-bold text-white">
+            E
+          </div>
+          <span className="text-sm font-semibold text-gray-900">Ema T&amp;E</span>
+          {/* Trip pill */}
+          <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-medium capitalize text-gray-500">
+            {tripLabel}
+          </span>
+        </div>
 
-      {/* Main chat area */}
-      <div className="ml-[240px] flex flex-1 flex-col">
-        {/* Header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
-          <span className="text-sm font-medium text-gray-500"># expense-reports</span>
+        <div className="flex items-center gap-3">
+          {/* Fallback/Live status */}
           {process.env.NODE_ENV === 'development' && !isAssemblyLoading && report && (
             <span className={`rounded px-2 py-0.5 text-[10px] font-mono ${
               usedFallback ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
@@ -554,192 +549,65 @@ export default function ChatPage() {
               {usedFallback ? 'FALLBACK' : 'LIVE LLM'}
             </span>
           )}
-        </div>
 
-        {/* Message scroll area */}
-        <div
-          ref={scrollRef}
-          className="flex-1 space-y-1 overflow-y-auto bg-white py-6"
-        >
-          {messages.map((msg, index) => {
+          {/* Submit status */}
+          {hasSubmitted && (
+            <span className="flex items-center gap-1 text-[12px] text-green-600">
+              <CheckCircle className="h-3.5 w-3.5" />
+              Submitted
+            </span>
+          )}
+
+          {/* User name */}
+          {chatUser && (
+            <span className="text-[12px] text-gray-500">{chatUser.name}</span>
+          )}
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+            aria-label="Logout"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* Message scroll area */}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto py-6"
+      >
+        <div className="mx-auto max-w-3xl space-y-1">
+          {messages.map((msg) => {
             const isFirstAssistant = msg.id === firstMessageId;
 
             return (
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                userInitials={sidebarUser?.avatar_initials || 'U'}
               >
                 {isFirstAssistant && report ? (
-                  <div className="mt-3 space-y-3">
-                    {/* Expense table with inline edit + expandable reasoning */}
-                    <div className="overflow-x-auto rounded-lg border border-gray-200">
-                      <table className="w-full text-left text-sm">
-                        <thead>
-                          <tr className="bg-[#1F8844]/5 text-xs font-medium uppercase tracking-wide text-gray-500">
-                            <th className="px-3 py-2 w-8">#</th>
-                            <th className="px-3 py-2">Description</th>
-                            <th className="px-3 py-2 text-right">Amount</th>
-                            <th className="px-3 py-2">Category</th>
-                            <th className="px-3 py-2 text-center">Confidence</th>
-                            <th className="px-3 py-2 w-12" />
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {report.items.map((item, idx) => {
-                            const isDinner = item.original_category !== null;
-                            const isGap = item.recommendation === 'request_employee_input';
-                            const isExpanded = expandedItems.has(item.id);
-                            return (
-                              <React.Fragment key={item.id}>
-                                <tr
-                                  className={
-                                    isDinner ? 'bg-[#FEF3C7] border-l-[3px] border-l-[#F59E0B]'
-                                    : isGap ? 'bg-[#FEF9C3] border-l-[3px] border-l-[#EAB308]'
-                                    : 'hover:bg-gray-50'
-                                  }
-                                >
-                                  <td className="px-3 py-2 text-xs text-gray-400">{idx + 1}</td>
-                                  <td className="px-3 py-2">
-                                    <span className="font-medium text-gray-800">{item.description}</span>
-                                    <span className="ml-2 text-xs text-gray-400">{item.date}</span>
-                                  </td>
-                                  {/* Editable amount */}
-                                  <td className="px-3 py-2 text-right font-mono text-gray-800">
-                                    {editingAmountId === item.id ? (
-                                      <input
-                                        type="number"
-                                        autoFocus
-                                        defaultValue={item.amount}
-                                        onBlur={(e) => handleAmountChange(item.id, e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingAmountId(null); }}
-                                        className="w-24 rounded border border-gray-300 px-2 py-0.5 text-right text-xs font-mono"
-                                      />
-                                    ) : (
-                                      <button onClick={() => setEditingAmountId(item.id)} className="cursor-pointer hover:underline" title="Click to edit">
-                                        ₹{item.amount.toLocaleString('en-IN')}
-                                      </button>
-                                    )}
-                                  </td>
-                                  {/* Editable category */}
-                                  <td className="px-3 py-2">
-                                    {editingCategoryId === item.id ? (
-                                      <select
-                                        autoFocus
-                                        defaultValue={item.category}
-                                        onChange={(e) => handleCategoryChange(item.id, item.category, e.target.value)}
-                                        onBlur={() => setEditingCategoryId(null)}
-                                        className="rounded border border-gray-300 px-2 py-0.5 text-xs"
-                                      >
-                                        {EXPENSE_CATEGORIES.map(cat => (
-                                          <option key={cat} value={cat}>{cat}</option>
-                                        ))}
-                                        {!EXPENSE_CATEGORIES.includes(item.category as typeof EXPENSE_CATEGORIES[number]) && (
-                                          <option value={item.category}>{item.category}</option>
-                                        )}
-                                      </select>
-                                    ) : (
-                                      <button
-                                        onClick={() => setEditingCategoryId(item.id)}
-                                        className={`inline-block cursor-pointer rounded-full px-2 py-0.5 text-xs font-medium hover:ring-1 hover:ring-gray-300 ${
-                                          isDinner ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
-                                        }`}
-                                        title="Click to change category"
-                                      >
-                                        {item.category}
-                                      </button>
-                                    )}
-                                    {isDinner && editingCategoryId !== item.id && (
-                                      <span className="ml-1 text-[10px] text-gray-400 line-through">{item.original_category}</span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <span className={`inline-flex items-center gap-1 text-xs font-medium ${
-                                      item.confidence > 90 ? 'text-green-600' : item.confidence >= 70 ? 'text-amber-600' : 'text-red-600'
-                                    }`}>
-                                      <span className={`h-1.5 w-1.5 rounded-full ${
-                                        item.confidence > 90 ? 'bg-green-500' : item.confidence >= 70 ? 'bg-amber-500' : 'bg-red-500'
-                                      }`} />
-                                      {item.confidence}%
-                                    </span>
-                                  </td>
-                                  {/* Expandable reasoning toggle */}
-                                  <td className="px-3 py-2 text-center">
-                                    {item.reasoning && (
-                                      <button
-                                        onClick={() => toggleItemExpansion(item.id)}
-                                        className="text-[11px] text-gray-400 hover:text-gray-700 underline decoration-dotted"
-                                      >
-                                        {isExpanded ? 'Hide' : 'Why?'}
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                                {isExpanded && item.reasoning && (
-                                  <tr className={isDinner ? 'bg-[#FEF3C7]/50' : 'bg-gray-50'}>
-                                    <td colSpan={6} className="px-4 py-2">
-                                      <div className="text-xs leading-relaxed text-gray-600">
-                                        {isDinner && item.original_category && (
-                                          <span className="mr-2 rounded bg-amber-200/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                                            {item.original_category} → {item.category}
-                                          </span>
-                                        )}
-                                        {item.reasoning}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                              </React.Fragment>
-                            );
-                          })}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t-2 border-gray-200 bg-gray-50">
-                            <td className="px-3 py-2" colSpan={2}>
-                              <span className="font-semibold text-gray-700">Total</span>
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono font-semibold text-gray-800">
-                              ₹{report.total_amount.toLocaleString('en-IN')}
-                            </td>
-                            <td className="px-3 py-2" colSpan={3} />
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-
-                    {/* AI disagreement nudge */}
-                    {nudge && (
-                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                        <p className="text-sm text-blue-900">
-                          <strong>Ema suggests &ldquo;{nudge.aiCategory}&rdquo;</strong> &mdash; {nudge.aiReasoning}
-                        </p>
-                        <div className="mt-2 flex gap-2">
-                          <button onClick={() => setNudge(null)}
-                            className="rounded bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-300">
-                            Keep Mine
-                          </button>
-                          <button onClick={() => {
-                            updateExpenseItem(nudge.itemId, { category: nudge.aiCategory });
-                            setNudge(null);
-                          }}
-                            className="rounded bg-[#1F8844] px-3 py-1 text-xs font-medium text-white hover:bg-[#186d36]">
-                            Use Ema&apos;s
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Gap detection */}
-                    {report.missing_items.map((gap) => (
-                      <div key={`gap-${gap.id}`} className="rounded-lg border-l-[3px] border-l-[#EAB308] bg-[#FEF9C3] p-3">
-                        <p className="text-[13px] text-amber-900">
-                          <strong>Gap detected:</strong> {gap.detected_gap}
-                          {' '}Estimated ~₹{gap.estimated_amount.toLocaleString('en-IN')}.
-                          {' '}{gap.action_needed}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                  <ExpenseReportCard
+                    report={report}
+                    editingCategoryId={editingCategoryId}
+                    editingAmountId={editingAmountId}
+                    onEditCategory={(id) => setEditingCategoryId(id)}
+                    onCategoryChange={handleCategoryChange}
+                    onCancelEditCategory={() => setEditingCategoryId(null)}
+                    onEditAmount={(id) => setEditingAmountId(id)}
+                    onAmountChange={handleAmountChange}
+                    onCancelEditAmount={() => setEditingAmountId(null)}
+                    nudge={nudge}
+                    onAcceptNudge={() => {
+                      if (nudge) {
+                        updateExpenseItem(nudge.itemId, { category: nudge.aiCategory });
+                        setNudge(null);
+                      }
+                    }}
+                    onRejectNudge={() => setNudge(null)}
+                  />
                 ) : null}
               </MessageBubble>
             );
@@ -755,13 +623,16 @@ export default function ChatPage() {
               <button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="flex items-center gap-2 rounded-lg bg-[#1F8844] px-6 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-[#186d36] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-2 rounded-2xl bg-[#1F8844] px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-[#1F8844]/20 transition-all hover:bg-[#186d36] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isSubmitting ? 'Submitting...' : (
+                {isSubmitting ? (
                   <>
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4" />
                     Confirm &amp; Submit
                   </>
                 )}
@@ -769,16 +640,16 @@ export default function ChatPage() {
             </div>
           )}
         </div>
-
-        {/* Chat input — fixed at bottom */}
-        <ChatInput
-          onSend={handleSend}
-          disabled={isAssemblyLoading || isStreaming}
-          demoResponse={demoResponse}
-          value={inputText}
-          onChange={setInputText}
-        />
       </div>
+
+      {/* Chat input — fixed at bottom */}
+      <ChatInput
+        onSend={handleSend}
+        disabled={isAssemblyLoading || isStreaming}
+        demoResponse={demoResponse}
+        value={inputText}
+        onChange={setInputText}
+      />
     </div>
   );
 }
@@ -798,6 +669,9 @@ function getInitials(name: string): string {
 function buildInitialMessage(report: {
   traveler: string;
   trip_summary: string;
+  items: { recommendation: string; original_category: string | null; flag_reason: string | null }[];
+  flagged_items: { id: string }[];
+  missing_items: { id: string }[];
   summary: {
     total_items: number;
     auto_approve_count: number;
@@ -805,5 +679,18 @@ function buildInitialMessage(report: {
 }): string {
   const firstName = report.traveler.split(' ')[0];
   const destination = report.trip_summary?.split(',')[0]?.trim() || 'your trip';
+
+  // Count attention items: flagged or recategorized (excluding gap items) + missing items
+  const flaggedIds = new Set(report.flagged_items.map((f) => f.id));
+  const attentionCount = report.items.filter(
+    (item) =>
+      item.recommendation !== 'request_employee_input' &&
+      (flaggedIds.has((item as any).id) || item.original_category !== null)
+  ).length + report.missing_items.length;
+
+  if (attentionCount > 0) {
+    return `Hey ${firstName}, welcome back from ${destination}. I've put together your expense report — ${report.summary.total_items} items, ${report.summary.auto_approve_count} auto-approved. Just ${attentionCount} thing${attentionCount > 1 ? 's' : ''} need${attentionCount === 1 ? 's' : ''} your input.`;
+  }
+
   return `Hey ${firstName}, welcome back from ${destination}. I've put together your expense report — ${report.summary.total_items} items, ${report.summary.auto_approve_count} auto-approved. Take a look.`;
 }
