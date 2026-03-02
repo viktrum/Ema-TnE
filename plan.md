@@ -138,11 +138,66 @@ Phases:
 
 ---
 
+## 2026-03-02 02:00 IST — Phase 3.5 Completed
+**Branch:** feature/phase-3.5-realtime → merged to develop
+**PR:** #4 (https://github.com/viktrum/Ema-TnE/pull/4)
+**Gate 3.5:** PASS — side-by-side demo works (Tanya submits → Mihir sees in 2s → approves → Tanya gets Ema message)
+**Code review findings (4 issues fixed at threshold 75):**
+1. Fragile dedup (85): replaced content-sniffing with `message_type` column
+2. Hardcoded "Mihir" (75): dynamic reviewer name lookup
+3. XSS (75): `escapeHtml()` for user input in notification HTML
+4. Silent errors (75): error logging + typed `SupabaseClient`
+**Bugs fixed during testing:**
+- LLM JSON wrapped in markdown fences — added fence stripping + latch-based detection
+- Realtime dedup — SSE-streamed messages duplicated by subscription → `message_type` discriminator
+- Chat input disabled after submit → enabled for post-submit replies
+**Known polish (Phase 5):** Dashboard submitted report display quality (severity inverted, raw sources, no reasoning text)
+
+---
+
+## 2026-03-02 02:45 IST — Phase 3.8 Planned: Pre-Demo Hardening
+**Branch:** feature/phase-3.8-hardening (not started)
+**Status:** Plan approved, ready for implementation
+**Purpose:** Harden chat against garbage input, fix XSS, enrich demo narrative, add prompt evals
+
+### 8 Priorities (~112 min total)
+1. **System prompt hardening** — scope boundary, injection protection, submission gate, sequential gap handling, add-item gate
+2. **XSS fix** — `isomorphic-dompurify` in MessageBubble.tsx (NOT `dompurify` — SSR crash)
+3. **Fence-stripping consolidation** — shared `parseLLMResponse.ts` utility replacing 3 inline regexes
+4. **Seed data enrichment** — 3 new flagged dashboard_reports: cross-employee duplicate (Rank 6), phantom client dinner (Rank 2), conference meal overlap (Rank 5)
+5. **Demo script update** — Step 6 narration for new flagged items (escalating intensity through dashboard)
+5b. **Fallback fix** — universal fallback shows submit button prematurely → set to false
+6. **Action handler completion** — wire up add_item, update_category, remove_item in parseAndApplyActions
+7. **Input hardening** — maxLength=500 on ChatInput, server-side 2000 char guard
+8. **scenarioContext fix** — fetch scenario server-side in route.ts, pass to buildChatMessages
+
+### 7 Prompt Evals (run 3x each, 2/3 pass threshold)
+E1: Scope boundary (weather question → redirect)
+E2: Garbage input (random chars → redirect)
+E3: Prompt injection (ignore instructions → redirect)
+E4: Submission gate (early submit → blocks)
+E5: Sequential gaps (gap 1 resolved → asks gap 2)
+E6: Echo prevention (script tag → not echoed)
+E7: Add item (chai at airport → asks for details or adds)
+
+### Scoping Decisions
+- Per-item progressive submission: NOT building (control by narration)
+- Carousel for multi-flag items: NOT building
+- Re-approval after edits: NOT building
+- Chat history persistence: NOT building (fresh demo each time)
+
+### Research Sources
+- Deep research synthesis: `docs/Expense Assembly research/SYNTHESIS — Expense Assembly Problem Discovery.md`
+- 3 deep research agents (chat UX gaps, demo narrative, garbage handling)
+- 1 principal architect review (4 corrections, 2 additions)
+
+---
+
 ## Current State (End of Session 2)
 - Phase 1: ✅ Merged to develop (PR #1)
-- Phase 2: ✅ Merged to develop (PR #2)
-- Phase 3: ✅ Merged to develop (PR #3) — code review fixes included
-- Phase 3.5: 📋 Planned — bidirectional realtime, ready for implementation
+- Phase 2: ✅ Merged to develop (PR #2) — user concerned about quality
+- Phase 3: ✅ Merged to develop (PR #3)
+- Phase 3.5: ✅ Merged to develop (PR #4) — bidirectional realtime working
 - Phase 4-6: Not started
 - Deep research: Results available, deferred to Phase 5/6
 - CodeRabbit/Greptile GitHub Apps: NOT installed
@@ -153,8 +208,33 @@ Phases:
 - Better visual hierarchy: message → table → reasoning → gap question
 - Streaming animation, typing indicator refinement
 - Mobile responsiveness
+- **Markdown-to-HTML in chat messages** — LLM sometimes returns markdown pipe tables (`| Col | Val |`) in the `response` field. `MessageBubble` uses `dangerouslySetInnerHTML` which renders HTML but not markdown. Tables show as raw text. Fix: add `marked` or `react-markdown` renderer, or instruct LLM to return HTML tables. Non-deterministic — happens on some runs, not others.
 - **Dashboard submitted report polish** — reports submitted via chat→dashboard bridge show raw assembly data instead of clean dashboard format:
   - Severity logic inverted (high confidence → LOW, should use flag type not confidence)
   - Flag reason is raw assembly text, needs human-readable formatting
   - Sources show raw identifiers ("Email (PNR: ABC123)"), need clean labels ("Calendar", "CRM", "Policy")
   - Reasoning section shows badges but no explanation text
+
+---
+
+## 2026-03-02 05:00 IST — Phase 3.8 Completed
+**Branch:** feature/phase-3.8-hardening → merged to develop
+**PR:** #5 (https://github.com/viktrum/Ema-TnE/pull/5)
+**Hotfix:** #6 (https://github.com/viktrum/Ema-TnE/pull/6) — NaN fix for update_amount
+**Gate 3.8:** PASS — 7/7 promptfoo evals, 10/10 UATs, tsc clean, build passes
+**Key deliverables:**
+- System prompt hardened (5 sections: scope boundary, injection protection, submission gate, add-item gate, sequential gaps)
+- XSS fixed via isomorphic-dompurify in MessageBubble
+- Fence-stripping consolidated into shared parseLLMResponse.ts utility
+- 3 new flagged dashboard reports (cross-employee duplicate, phantom client dinner, conference meal overlap)
+- Demo script Step 6 updated with escalating narrative arc
+- Action handlers wired (add_item, update_category, remove_item)
+- Input hardening (maxLength=500 + counter, server-side 2000 char guard)
+- scenarioContext fetched server-side from Supabase
+- Promptfoo eval suite added (7 tests, 100% pass rate)
+**Code review findings (3 issues fixed at threshold 75):**
+1. Universal fallback message was scenario-specific ("taxi fare") — made neutral
+2. extractChatResponse save logic had unreachable fallback — fixed with parsed check
+3. CLAUDE.md directory structure not updated for utils/ and evals/ — updated
+**Bug found during UAT:** update_amount NaN when LLM sends currency symbols (PR #6)
+**Deferred:** Markdown tables in chat (LLM returns pipe tables, MessageBubble only renders HTML)
